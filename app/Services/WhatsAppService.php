@@ -8,24 +8,23 @@ use Illuminate\Support\Facades\Log;
 /**
  * WhatsAppService
  *
- * Pengirim WhatsApp resmi via WhatsApp Cloud API (Meta / graph.facebook.com).
- * Menggantikan WablasService. Kredensial diambil dari config('services.whatsapp').
+ * Pengirim WhatsApp via WAHA (WhatsApp HTTP API, self-hosted).
+ * Endpoint kirim: POST {base}/api/sendText dengan header X-Api-Key.
+ * Kredensial dari config('services.waha').
  */
 class WhatsAppService
 {
-    protected string $apiUrl;
-    protected string $version;
-    protected string $phoneNumberId;
-    protected string $token;
+    protected string $baseUrl;
+    protected string $apiKey;
+    protected string $session;
     protected bool $enabled;
 
     public function __construct()
     {
-        $this->apiUrl = rtrim(config('services.whatsapp.url', 'https://graph.facebook.com'), '/');
-        $this->version = config('services.whatsapp.version', 'v21.0');
-        $this->phoneNumberId = config('services.whatsapp.phone_number_id', '');
-        $this->token = config('services.whatsapp.token', '');
-        $this->enabled = config('services.whatsapp.enabled', false);
+        $this->baseUrl = rtrim(config('services.waha.base_url', ''), '/');
+        $this->apiKey = config('services.waha.api_key', '');
+        $this->session = config('services.waha.session', 'default');
+        $this->enabled = config('services.waha.enabled', false);
     }
 
     /**
@@ -34,55 +33,51 @@ class WhatsAppService
     public function sendMessage(string $phone, string $message): array
     {
         if (!$this->enabled) {
-            Log::info('WhatsApp disabled. Message not sent.', ['phone' => $phone]);
+            Log::info('WhatsApp (WAHA) disabled. Message not sent.', ['phone' => $phone]);
             return ['status' => 'disabled', 'message' => 'WhatsApp is disabled'];
         }
 
-        if (empty($this->token) || empty($this->phoneNumberId)) {
-            Log::error('WhatsApp Cloud API not configured (token/phone_number_id missing)');
+        if (empty($this->baseUrl) || empty($this->apiKey)) {
+            Log::error('WAHA not configured (base_url/api_key missing)');
             return ['status' => 'error', 'message' => 'WhatsApp not configured'];
         }
 
-        $to = $this->normalizePhone($phone);
+        $chatId = $this->chatId($phone);
 
         try {
-            $response = Http::withToken($this->token)
-                ->post("{$this->apiUrl}/{$this->version}/{$this->phoneNumberId}/messages", [
-                    'messaging_product' => 'whatsapp',
-                    'recipient_type' => 'individual',
-                    'to' => $to,
-                    'type' => 'text',
-                    'text' => [
-                        'preview_url' => false,
-                        'body' => $message,
-                    ],
+            $response = Http::withHeaders(['X-Api-Key' => $this->apiKey])
+                ->acceptJson()
+                ->post("{$this->baseUrl}/api/sendText", [
+                    'session' => $this->session,
+                    'chatId' => $chatId,
+                    'text' => $message,
+                    'linkPreview' => true,
                 ]);
 
             $result = $response->json();
 
             if ($response->successful()) {
-                Log::info('WhatsApp message sent', ['phone' => $to, 'status' => $response->status()]);
-                return ['status' => 'success', 'phone' => $to, 'response' => $result];
+                Log::info('WhatsApp message sent', ['chatId' => $chatId, 'status' => $response->status()]);
+                return ['status' => 'success', 'phone' => $chatId, 'response' => $result];
             }
 
-            Log::error('WhatsApp API error', ['phone' => $to, 'status' => $response->status(), 'response' => $result]);
-            return ['status' => 'failed', 'phone' => $to, 'response' => $result];
+            Log::error('WAHA API error', ['chatId' => $chatId, 'status' => $response->status(), 'response' => $result]);
+            return ['status' => 'failed', 'phone' => $chatId, 'response' => $result];
         } catch (\Exception $e) {
-            Log::error('WhatsApp send failed', ['phone' => $to, 'error' => $e->getMessage()]);
-            return ['status' => 'error', 'phone' => $to, 'message' => $e->getMessage()];
+            Log::error('WhatsApp send failed', ['chatId' => $chatId, 'error' => $e->getMessage()]);
+            return ['status' => 'error', 'phone' => $chatId, 'message' => $e->getMessage()];
         }
     }
 
     /**
-     * Kirim pesan ke banyak penerima.
-     * Cloud API tidak punya endpoint bulk, jadi dikirim satu-per-satu dengan jeda kecil.
+     * Kirim pesan ke banyak penerima (satu-per-satu dengan jeda kecil).
      *
      * @param array<int, array{phone: string, message: string}> $recipients
      */
     public function sendBulkMessages(array $recipients): array
     {
         if (!$this->enabled) {
-            Log::info('WhatsApp disabled. Bulk messages not sent.', ['count' => count($recipients)]);
+            Log::info('WhatsApp (WAHA) disabled. Bulk messages not sent.', ['count' => count($recipients)]);
             return ['status' => 'disabled', 'message' => 'WhatsApp is disabled'];
         }
 
@@ -104,9 +99,17 @@ class WhatsAppService
     }
 
     /**
-     * Normalisasi nomor ke format internasional tanpa "+" (62xxx) sesuai Cloud API.
+     * Ubah nomor menjadi chatId WAHA: 62xxxxxxxxxx@c.us
      */
-    protected function normalizePhone(string $phone): string
+    public function chatId(string $phone): string
+    {
+        return $this->normalizePhone($phone) . '@c.us';
+    }
+
+    /**
+     * Normalisasi nomor ke format internasional tanpa "+" (62xxx).
+     */
+    public function normalizePhone(string $phone): string
     {
         $phone = preg_replace('/\D/', '', $phone);
         $phone = ltrim($phone, '0');
@@ -123,6 +126,6 @@ class WhatsAppService
      */
     public function isEnabled(): bool
     {
-        return $this->enabled && !empty($this->token) && !empty($this->phoneNumberId);
+        return $this->enabled && !empty($this->baseUrl) && !empty($this->apiKey);
     }
 }

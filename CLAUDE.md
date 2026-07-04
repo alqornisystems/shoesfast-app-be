@@ -66,7 +66,7 @@ Because prod is authoritative, new migrations must match the existing schema. Wh
 
 ### Integrations (`app/Services`)
 
-- **`WhatsAppService`** — outbound WhatsApp via **WhatsApp Cloud API (Meta)**. Gated by `WHATSAPP_ENABLED` + `WHATSAPP_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID`. Inbound (reading messages) via `WebhookController@whatsapp`: a single `GET|POST /api/webhook` route — GET answers Meta's subscription challenge (`WHATSAPP_VERIFY_TOKEN`), POST parses the Cloud API payload (`entry.0.changes.0.value.messages.0`) and drives auto-reply / auto-register-customer / auto-create-order.
+- **`WhatsAppService`** — outbound WhatsApp via **WAHA (WhatsApp HTTP API, self-hosted)**: `POST {WAHA_BASE_URL}/api/sendText` with an `X-Api-Key` header, `chatId` = `62xxx@c.us`. Gated by `WAHA_ENABLED` + `WAHA_BASE_URL`/`WAHA_API_KEY`. Inbound (reading messages) via `WebhookController@whatsapp` at `POST /api/webhook`: optional HMAC verification (`WAHA_WEBHOOK_SECRET`, header `X-Webhook-Hmac`, SHA512), parses the WAHA event payload (`payload.from`/`payload.body`, text type = `chat`, skips `fromMe`/`@g.us`) and drives auto-reply / auto-register-customer / auto-create-order.
 - **`FcmService`** — push notifications. Gated by `FCM_ENABLED`.
 - **`ReportCacheService`** — caches report aggregations (cache store is the `database` driver).
 

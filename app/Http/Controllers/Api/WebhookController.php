@@ -18,40 +18,44 @@ class WebhookController extends Controller
     }
 
     /**
-     * WhatsApp Cloud API webhook.
-     * GET  /api/webhook -> verifikasi langganan (balas hub.challenge)
-     * POST /api/webhook -> terima pesan masuk
+     * WAHA webhook (WhatsApp HTTP API).
+     * POST /api/webhook -> terima event pesan masuk dari WAHA.
      */
     public function whatsapp(Request $request)
     {
-        // Verifikasi webhook dari Meta (GET dengan parameter hub.*)
-        if ($request->isMethod('get')) {
-            $mode = $request->query('hub_mode');
-            $verifyToken = $request->query('hub_verify_token');
-            $challenge = $request->query('hub_challenge');
-
-            if ($mode === 'subscribe' && $verifyToken === config('services.whatsapp.verify_token')) {
-                return response($challenge, 200);
+        // Verifikasi HMAC opsional (jika WAHA_WEBHOOK_SECRET diset)
+        $secret = config('services.waha.webhook_secret');
+        if (!empty($secret)) {
+            $signature = $request->header('X-Webhook-Hmac');
+            $expected = hash_hmac('sha512', $request->getContent(), $secret);
+            if (!is_string($signature) || !hash_equals($expected, $signature)) {
+                Log::warning('WAHA webhook HMAC mismatch');
+                return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
             }
-
-            return response('Forbidden', 403);
         }
 
         try {
             // Log incoming webhook for debugging
-            Log::info('WhatsApp Webhook Received', $request->all());
+            Log::info('WAHA Webhook Received', $request->all());
 
-            // Ekstrak pesan pertama dari payload Cloud API
-            $incoming = data_get($request->all(), 'entry.0.changes.0.value.messages.0');
+            $event = data_get($request->all(), 'event');
+            $payload = data_get($request->all(), 'payload', []);
 
-            // Bukan pesan masuk (mis. notifikasi status delivered/read) -> abaikan, balas 200
-            if (!$incoming) {
-                return response()->json(['success' => true, 'message' => 'No message to process']);
+            // Hanya proses event pesan masuk; abaikan status/ack/session
+            if (!in_array($event, ['message', 'message.any'], true) || !is_array($payload)) {
+                return response()->json(['success' => true, 'message' => 'Ignored event']);
             }
 
-            $phone = $incoming['from'] ?? '';               // format internasional 62xxx
-            $messageType = $incoming['type'] ?? 'text';
-            $message = trim(data_get($incoming, 'text.body', ''));
+            // Abaikan pesan yang kita kirim sendiri
+            if (data_get($payload, 'fromMe', false)) {
+                return response()->json(['success' => true, 'message' => 'Ignored own message']);
+            }
+
+            $from = (string) data_get($payload, 'from', '');   // mis. 6281234567890@c.us
+            $phone = preg_replace('/\D/', '', $from);          // 6281234567890
+            $type = (string) data_get($payload, 'type', '');
+            $messageType = $type === 'chat' ? 'text' : $type;  // WAHA pakai "chat" untuk teks
+            $message = trim((string) data_get($payload, 'body', ''));
 
             // Get current time and day
             $currentHour = (int) date('H');
@@ -62,8 +66,8 @@ class WebhookController extends Controller
             $startHoliday = '2025-03-30';
             $endHoliday = '2025-04-06';
 
-            // Hanya proses pesan teks dengan pengirim yang valid
-            if ($phone !== '' && $messageType === 'text') {
+            // Hanya proses pesan teks individual (bukan grup) dengan pengirim valid
+            if ($phone !== '' && $messageType === 'text' && !str_ends_with($from, '@g.us')) {
                 // Normalize phone number
                 $normalizedPhone = $this->normalizePhone($phone);
 

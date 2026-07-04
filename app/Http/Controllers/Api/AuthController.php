@@ -48,23 +48,18 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Revoke previous tokens and issue new one
+        // Revoke previous tokens and issue a new expiring one
         $user->tokens()->delete();
 
-        // Set token expiration: 3 days if remember_me, otherwise default (no expiration for Sanctum)
-        $tokenName = $request->input('remember_me') ? 'web-admin-remember' : 'web-admin';
-        $token = $user->createToken($tokenName)->plainTextToken;
-
-        // If remember_me, extend session lifetime to 3 days (4320 minutes)
-        if ($request->input('remember_me')) {
-            config(['session.lifetime' => 4320]);
-        }
+        $remember = (bool) $request->input('remember_me');
+        [$token, $expiresAt] = $this->issueToken($user, $remember);
 
         $branchContext = app('branch.context');
 
         return response()->json([
             'message' => 'Login berhasil.',
             'token'   => $token,
+            'expires_at' => $expiresAt->toIso8601String(),
             'user'    => [
                 'id'           => $user->id,
                 'name'         => $user->name,
@@ -89,6 +84,47 @@ class AuthController extends Controller
         app('branch.context')->reset();
 
         return response()->json(['message' => 'Logout berhasil.']);
+    }
+
+    // POST /api/auth/refresh
+    // Tukar token yang masih valid dengan token baru ber-expiry segar.
+    public function refresh(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $current = $user->currentAccessToken();
+
+        // Pertahankan tipe sesi (remember atau tidak) dari token saat ini
+        $remember = str_contains((string) ($current->name ?? ''), 'remember');
+
+        // Cabut hanya token saat ini (device lain tetap login)
+        $current->delete();
+
+        [$token, $expiresAt] = $this->issueToken($user, $remember);
+
+        return response()->json([
+            'message' => 'Token diperbarui.',
+            'token' => $token,
+            'expires_at' => $expiresAt->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * Terbitkan token akses ber-expiry.
+     *
+     * @return array{0: string, 1: \Illuminate\Support\Carbon}
+     */
+    private function issueToken(User $user, bool $remember): array
+    {
+        $ttl = $remember
+            ? (int) config('sanctum.remember_token_ttl', 43200)
+            : (int) config('sanctum.token_ttl', 1440);
+
+        $expiresAt = now()->addMinutes($ttl);
+        $tokenName = $remember ? 'web-admin-remember' : 'web-admin';
+
+        $token = $user->createToken($tokenName, ['*'], $expiresAt)->plainTextToken;
+
+        return [$token, $expiresAt];
     }
 
     // POST /api/auth/switch-branch

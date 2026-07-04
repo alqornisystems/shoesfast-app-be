@@ -51,6 +51,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Masa Berlaku Token (menit) — override per-token
+    |--------------------------------------------------------------------------
+    |
+    | 'expiration' di atas sengaja null agar tidak menimpa "expires_at" per
+    | token. AuthController menetapkan expiry per token: TTL normal vs TTL
+    | "remember me". Diperbarui saat client memanggil endpoint refresh.
+    |
+    */
+
+    'token_ttl' => (int) env('SANCTUM_TOKEN_TTL', 1440),               // 1 hari
+    'remember_token_ttl' => (int) env('SANCTUM_REMEMBER_TOKEN_TTL', 43200), // 30 hari
+
+    /*
+    |--------------------------------------------------------------------------
     | Token Prefix
     |--------------------------------------------------------------------------
     |

@@ -35,13 +35,13 @@ return [
         ],
     ],
 
-    'whatsapp' => [
-        'enabled' => env('WHATSAPP_ENABLED', false),
-        'url' => env('WHATSAPP_API_URL', 'https://graph.facebook.com'),
-        'version' => env('WHATSAPP_API_VERSION', 'v21.0'),
-        'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID', ''),
-        'token' => env('WHATSAPP_TOKEN', ''),
-        'verify_token' => env('WHATSAPP_VERIFY_TOKEN', ''),
+    // WhatsApp via WAHA (WhatsApp HTTP API, self-hosted)
+    'waha' => [
+        'enabled' => env('WAHA_ENABLED', false),
+        'base_url' => env('WAHA_BASE_URL', ''),
+        'api_key' => env('WAHA_API_KEY', ''),
+        'session' => env('WAHA_SESSION', 'default'),
+        'webhook_secret' => env('WAHA_WEBHOOK_SECRET', ''),
     ],
 
     'fcm' => [

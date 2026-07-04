@@ -25,17 +25,18 @@ use Illuminate\Support\Facades\Route;
 
 // Public Routes (No Authentication Required)
 Route::prefix('auth')->group(function () {
-    Route::post('login', [AuthController::class, 'login']);
+    // Rate-limit: maks 6 percobaan login per menit per IP
+    Route::post('login', [AuthController::class, 'login'])->middleware('throttle:6,1');
 });
 
-// WhatsApp Cloud API Webhook (No Authentication Required)
-// GET = verifikasi langganan Meta, POST = pesan masuk
-Route::match(['get', 'post'], 'webhook', [WebhookController::class, 'whatsapp']);
+// WAHA (WhatsApp HTTP API) Webhook (No Authentication Required, diverifikasi HMAC)
+Route::post('webhook', [WebhookController::class, 'whatsapp']);
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
+        Route::post('refresh', [AuthController::class, 'refresh']);
         Route::get('me', [AuthController::class, 'me']);
         Route::post('switch-branch', [AuthController::class, 'switchBranch']);
         Route::put('profile', [AuthController::class, 'updateProfile']);
