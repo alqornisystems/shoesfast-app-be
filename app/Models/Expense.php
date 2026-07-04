@@ -1,0 +1,49 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use App\Traits\BranchScoped;
+
+class Expense extends Model
+{
+    use BranchScoped;
+
+    protected $table = 'expenses';
+    protected $dateFormat = 'U';
+
+    protected $fillable = [
+        'projects_id',
+        'date',
+        'photo',
+        'note',
+        'nominal',
+        'category',
+        'is_deleted',
+        'created_by',
+        'modified_by',
+    ];
+
+    protected $casts = [
+        'date' => 'integer',
+        'nominal' => 'integer',
+        'is_deleted' => 'integer',
+        'created_at' => 'integer',
+        'updated_at' => 'integer',
+    ];
+
+    const UPDATED_AT = 'modified_at';
+
+    protected static function boot()
+    {
+        parent::boot();
+        static::addGlobalScope('notDeleted', function ($query) {
+            $query->where('is_deleted', 0);
+        });
+    }
+
+    public function project()
+    {
+        return $this->belongsTo(Project::class, 'projects_id');
+    }
+}
