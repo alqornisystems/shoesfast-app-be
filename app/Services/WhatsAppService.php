@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -21,10 +22,12 @@ class WhatsAppService
 
     public function __construct()
     {
-        $this->baseUrl = rtrim(config('services.waha.base_url', ''), '/');
-        $this->apiKey = config('services.waha.api_key', '');
-        $this->session = config('services.waha.session', 'default');
-        $this->enabled = config('services.waha.enabled', false);
+        // DB settings (editable from the admin panel) take precedence; fall back
+        // to config/.env when a setting hasn't been overridden.
+        $this->baseUrl = rtrim(Setting::read('waha_base_url', config('services.waha.base_url', '')), '/');
+        $this->apiKey = Setting::read('waha_api_key', config('services.waha.api_key', ''));
+        $this->session = Setting::read('waha_session', config('services.waha.session', 'default'));
+        $this->enabled = Setting::readBool('waha_enabled', (bool) config('services.waha.enabled', false));
     }
 
     /**
@@ -127,5 +130,153 @@ class WhatsAppService
     public function isEnabled(): bool
     {
         return $this->enabled && !empty($this->baseUrl) && !empty($this->apiKey);
+    }
+
+    // ---------------------------------------------------------------------
+    // Session management (WAHA) — powers the WhatsApp connection settings page.
+    // These proxy WAHA's session endpoints so the frontend never needs the
+    // WAHA base URL / API key directly.
+    // ---------------------------------------------------------------------
+
+    /**
+     * Konfigurasi WAHA saat ini (untuk halaman pengaturan; tanpa API key).
+     */
+    public function configSummary(): array
+    {
+        return [
+            'enabled' => $this->enabled,
+            'configured' => ! empty($this->baseUrl) && ! empty($this->apiKey),
+            'base_url' => $this->baseUrl,
+            'session' => $this->session,
+        ];
+    }
+
+    private function http()
+    {
+        return Http::withHeaders(['X-Api-Key' => $this->apiKey])->timeout(15);
+    }
+
+    /**
+     * Pastikan WAHA aktif & terkonfigurasi sebelum memanggil API-nya.
+     *
+     * @return array|null  array error bila belum siap, null bila siap.
+     */
+    private function ensureReady(): ?array
+    {
+        if (! $this->enabled) {
+            return ['ok' => false, 'reason' => 'disabled', 'message' => 'WhatsApp (WAHA) dinonaktifkan di server.'];
+        }
+        if (empty($this->baseUrl) || empty($this->apiKey)) {
+            return ['ok' => false, 'reason' => 'not_configured', 'message' => 'WAHA belum dikonfigurasi (base_url / api_key kosong).'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Info sesi: status koneksi (WORKING/SCAN_QR_CODE/STARTING/STOPPED/FAILED)
+     * dan akun yang sedang terhubung.
+     */
+    public function getSessionInfo(): array
+    {
+        if ($err = $this->ensureReady()) {
+            return $err;
+        }
+
+        try {
+            $res = $this->http()->acceptJson()->get("{$this->baseUrl}/api/sessions/{$this->session}");
+
+            if ($res->successful()) {
+                $data = $res->json();
+
+                return [
+                    'ok' => true,
+                    'status' => $data['status'] ?? 'UNKNOWN',
+                    'me' => $data['me'] ?? null,
+                ];
+            }
+
+            // 404 = sesi belum dibuat/dijalankan.
+            return ['ok' => true, 'status' => 'STOPPED', 'me' => null];
+        } catch (\Exception $e) {
+            Log::warning('WAHA session info failed', ['error' => $e->getMessage()]);
+
+            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server WAHA.'];
+        }
+    }
+
+    /**
+     * Ambil QR code untuk scan sebagai data URL PNG base64.
+     */
+    public function getQr(): array
+    {
+        if ($err = $this->ensureReady()) {
+            return $err;
+        }
+
+        try {
+            $res = $this->http()
+                ->withHeaders(['Accept' => 'image/png'])
+                ->get("{$this->baseUrl}/api/{$this->session}/auth/qr");
+
+            if (! $res->successful()) {
+                return ['ok' => false, 'reason' => 'no_qr', 'message' => 'QR tidak tersedia (mungkin sudah terhubung atau sesi belum dimulai).'];
+            }
+
+            // Beberapa versi WAHA mengembalikan JSON {value: base64}, sebagian lagi PNG mentah.
+            $contentType = (string) $res->header('Content-Type');
+            if (str_contains($contentType, 'application/json')) {
+                $json = $res->json();
+                $value = $json['value'] ?? $json['qr'] ?? null;
+
+                return ['ok' => (bool) $value, 'qr' => $value ? 'data:image/png;base64,'.$value : null];
+            }
+
+            return ['ok' => true, 'qr' => 'data:image/png;base64,'.base64_encode($res->body())];
+        } catch (\Exception $e) {
+            Log::warning('WAHA QR fetch failed', ['error' => $e->getMessage()]);
+
+            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server WAHA.'];
+        }
+    }
+
+    /**
+     * Jalankan aksi sesi WAHA: start | stop | restart | logout.
+     */
+    private function sessionAction(string $action): array
+    {
+        if ($err = $this->ensureReady()) {
+            return $err;
+        }
+
+        try {
+            $res = $this->http()->acceptJson()->post("{$this->baseUrl}/api/sessions/{$this->session}/{$action}");
+
+            return ['ok' => $res->successful(), 'message' => $res->successful() ? null : 'WAHA menolak permintaan.'];
+        } catch (\Exception $e) {
+            Log::warning("WAHA session {$action} failed", ['error' => $e->getMessage()]);
+
+            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server WAHA.'];
+        }
+    }
+
+    public function startSession(): array
+    {
+        return $this->sessionAction('start');
+    }
+
+    public function stopSession(): array
+    {
+        return $this->sessionAction('stop');
+    }
+
+    public function restartSession(): array
+    {
+        return $this->sessionAction('restart');
+    }
+
+    public function logoutSession(): array
+    {
+        return $this->sessionAction('logout');
     }
 }

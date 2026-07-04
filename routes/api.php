@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\ServiceHppController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\WhatsAppController;
 use Illuminate\Support\Facades\Route;
 
 // Public Routes (No Authentication Required)
@@ -150,6 +151,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/statistics', [PartnershipTreatmentController::class, 'statistics']);
         Route::get('/{treatmentId}', [PartnershipTreatmentController::class, 'show']);
         Route::put('/{treatmentId}/status', [PartnershipTreatmentController::class, 'updateStatus']);
+    });
+
+    // WhatsApp (WAHA) connection management — scan QR & session control
+    Route::prefix('whatsapp')->group(function () {
+        Route::get('status', [WhatsAppController::class, 'status']);
+        Route::get('qr', [WhatsAppController::class, 'qr']);
+        Route::get('settings', [WhatsAppController::class, 'settings']);
+        Route::put('settings', [WhatsAppController::class, 'updateSettings']);
+        Route::post('start', [WhatsAppController::class, 'start']);
+        Route::post('stop', [WhatsAppController::class, 'stop']);
+        Route::post('restart', [WhatsAppController::class, 'restart']);
+        Route::post('logout', [WhatsAppController::class, 'logout']);
     });
 
     // Broadcasts (WhatsApp/SMS Broadcasting)
