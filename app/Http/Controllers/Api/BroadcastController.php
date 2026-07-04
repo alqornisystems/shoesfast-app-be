@@ -7,7 +7,7 @@ use App\Models\BroadcastTemplate;
 use App\Models\BroadcastSend;
 use App\Models\User;
 use App\Models\Customer;
-use App\Services\WablasService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,11 +15,11 @@ use Illuminate\Support\Facades\DB;
 
 class BroadcastController extends Controller
 {
-    protected WablasService $wablas;
+    protected WhatsAppService $whatsapp;
 
-    public function __construct(WablasService $wablas)
+    public function __construct(WhatsAppService $whatsapp)
     {
-        $this->wablas = $wablas;
+        $this->whatsapp = $whatsapp;
     }
     // ==================== TEMPLATES MANAGEMENT ====================
 
@@ -271,7 +271,7 @@ class BroadcastController extends Controller
             'created_by' => Auth::id(),
         ]);
 
-        // Send messages via Wablas
+        // Send messages via WhatsApp Cloud API
         $sentCount = 0;
         $failedCount = 0;
         $results = [];
@@ -289,8 +289,8 @@ class BroadcastController extends Controller
                 'customer_name' => $recipient->name,
             ]);
 
-            // Send via Wablas
-            $result = $this->wablas->sendMessage($recipient->phone, $message);
+            // Send via WhatsApp Cloud API
+            $result = $this->whatsapp->sendMessage($recipient->phone, $message);
             $results[] = $result;
 
             if ($result['status'] === 'success') {
@@ -304,8 +304,8 @@ class BroadcastController extends Controller
         if ($failedCount > 0) {
             $statusMessage .= ", {$failedCount} gagal";
         }
-        if (!$this->wablas->isEnabled()) {
-            $statusMessage .= " (Wablas disabled - messages not actually sent)";
+        if (!$this->whatsapp->isEnabled()) {
+            $statusMessage .= " (WhatsApp disabled - messages not actually sent)";
         }
 
         return response()->json([
@@ -316,7 +316,7 @@ class BroadcastController extends Controller
                 'recipients_count' => count($recipients),
                 'sent_count' => $sentCount,
                 'failed_count' => $failedCount,
-                'wablas_enabled' => $this->wablas->isEnabled(),
+                'whatsapp_enabled' => $this->whatsapp->isEnabled(),
                 'details' => $results,
             ],
         ], 201);

@@ -8,19 +8,19 @@ use App\Models\OrderItem;
 use App\Models\Send;
 use App\Models\User;
 use App\Services\FcmService;
-use App\Services\WablasService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class SendController extends Controller
 {
-    protected WablasService $wablas;
+    protected WhatsAppService $whatsapp;
 
     protected FcmService $fcm;
 
-    public function __construct(WablasService $wablas, FcmService $fcm)
+    public function __construct(WhatsAppService $whatsapp, FcmService $fcm)
     {
-        $this->wablas = $wablas;
+        $this->whatsapp = $whatsapp;
         $this->fcm = $fcm;
     }
 
@@ -232,7 +232,7 @@ class SendController extends Controller
                     ."Login menggunakan nomor WhatsApp Anda untuk melihat tracking kurir.\n\n"
                     .'Terima kasih! 🙏';
 
-                $this->wablas->sendMessage($customer->phone, $message);
+                $this->whatsapp->sendMessage($customer->phone, $message);
 
                 // FCM to customer
                 $fcmMessage = "Kurir {$courier->name} sedang dalam perjalanan untuk {$typeLabel} pesanan {$send->order->code}";

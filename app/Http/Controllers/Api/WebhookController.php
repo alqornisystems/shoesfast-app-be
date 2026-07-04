@@ -6,36 +6,52 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\OfflineMessage;
 use App\Models\Order;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
+    public function __construct(protected WhatsAppService $whatsapp)
+    {
+    }
+
     /**
-     * WhatsApp webhook handler
-     * Endpoint: POST /api/webhook
+     * WhatsApp Cloud API webhook.
+     * GET  /api/webhook -> verifikasi langganan (balas hub.challenge)
+     * POST /api/webhook -> terima pesan masuk
      */
     public function whatsapp(Request $request)
     {
+        // Verifikasi webhook dari Meta (GET dengan parameter hub.*)
+        if ($request->isMethod('get')) {
+            $mode = $request->query('hub_mode');
+            $verifyToken = $request->query('hub_verify_token');
+            $challenge = $request->query('hub_challenge');
+
+            if ($mode === 'subscribe' && $verifyToken === config('services.whatsapp.verify_token')) {
+                return response($challenge, 200);
+            }
+
+            return response('Forbidden', 403);
+        }
+
         try {
             // Log incoming webhook for debugging
             Log::info('WhatsApp Webhook Received', $request->all());
 
-            // Validate incoming data
-            $validated = $request->validate([
-                'phone' => 'required|string',
-                'message' => 'nullable|string',
-                'isGroup' => 'nullable|boolean',
-                'messageType' => 'nullable|string',
-                'isFromMe' => 'nullable|boolean',
-            ]);
+            // Ekstrak pesan pertama dari payload Cloud API
+            $incoming = data_get($request->all(), 'entry.0.changes.0.value.messages.0');
 
-            $phone = $validated['phone'];
-            $message = trim($validated['message'] ?? '');
-            $isGroup = $validated['isGroup'] ?? false;
-            $messageType = $validated['messageType'] ?? 'text';
-            $isFromMe = $validated['isFromMe'] ?? false;
+            // Bukan pesan masuk (mis. notifikasi status delivered/read) -> abaikan, balas 200
+            if (!$incoming) {
+                return response()->json(['success' => true, 'message' => 'No message to process']);
+            }
+
+            $phone = $incoming['from'] ?? '';               // format internasional 62xxx
+            $messageType = $incoming['type'] ?? 'text';
+            $message = trim(data_get($incoming, 'text.body', ''));
 
             // Get current time and day
             $currentHour = (int) date('H');
@@ -46,8 +62,8 @@ class WebhookController extends Controller
             $startHoliday = '2025-03-30';
             $endHoliday = '2025-04-06';
 
-            // Only process if not from group, not from me, and text message
-            if (!$isFromMe && !$isGroup && $messageType === 'text') {
+            // Hanya proses pesan teks dengan pengirim yang valid
+            if ($phone !== '' && $messageType === 'text') {
                 // Normalize phone number
                 $normalizedPhone = $this->normalizePhone($phone);
 
@@ -213,40 +229,6 @@ class WebhookController extends Controller
     }
 
     /**
-     * Device webhook handler
-     * Endpoint: POST /api/webhook-device
-     */
-    public function device(Request $request)
-    {
-        try {
-            Log::info('Device Webhook Received', $request->all());
-
-            $validated = $request->validate([
-                'status' => 'required|string',
-                'deviceName' => 'required|string',
-                'sender' => 'required|string',
-                'deviceId' => 'required|string',
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Device webhook received',
-                'data' => $validated,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Device Webhook Error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid request payload',
-            ], 400);
-        }
-    }
-
-    /**
      * Normalize phone number (remove leading 0 or 62)
      */
     private function normalizePhone(string $phone): string
@@ -282,82 +264,11 @@ class WebhookController extends Controller
     }
 
     /**
-     * Send WhatsApp message via Wablas API
+     * Send WhatsApp message via WhatsApp Cloud API.
      */
     private function sendWhatsAppMessage(string $phone, string $message): array
     {
-        $token = config('services.wablas.token', 'GLLLclnnWvESWJpJ6ZyFa9z58G7GQADNanll3Sr4yynUpsyJtbrs0FB.FpVJc8gI');
-        $apiUrl = config('services.wablas.url', 'https://bdg.wablas.com');
-
-        try {
-            $curl = curl_init();
-
-            curl_setopt_array($curl, [
-                CURLOPT_URL => $apiUrl . '/api/send-message',
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => http_build_query([
-                    'phone' => $phone,
-                    'message' => $message,
-                ]),
-                CURLOPT_HTTPHEADER => [
-                    "Authorization: $token",
-                    'Content-Type: application/x-www-form-urlencoded',
-                ],
-                CURLOPT_SSL_VERIFYHOST => 0,
-                CURLOPT_SSL_VERIFYPEER => 0,
-                CURLOPT_TIMEOUT => 30,
-            ]);
-
-            $result = curl_exec($curl);
-            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-            $error = curl_error($curl);
-
-            curl_close($curl);
-
-            if ($error) {
-                Log::error('Wablas cURL Error', ['error' => $error]);
-                return [
-                    'success' => false,
-                    'message' => "cURL Error: $error",
-                ];
-            }
-
-            $response = json_decode($result, true);
-
-            if ($httpCode == 200 && isset($response['status']) && $response['status'] === true) {
-                Log::info('WhatsApp Message Sent', [
-                    'phone' => $phone,
-                    'message' => substr($message, 0, 50) . '...',
-                ]);
-
-                return [
-                    'success' => true,
-                    'message' => $response['message'] ?? 'Message sent successfully',
-                    'data' => $response['data'] ?? null,
-                ];
-            }
-
-            Log::error('Wablas API Error', [
-                'http_code' => $httpCode,
-                'response' => $response,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => $response['message'] ?? 'Failed to send message',
-                'http_code' => $httpCode,
-            ];
-        } catch (\Exception $e) {
-            Log::error('Send WhatsApp Message Exception', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return [
-                'success' => false,
-                'message' => $e->getMessage(),
-            ];
-        }
+        return $this->whatsapp->sendMessage($phone, $message);
     }
 
     /**

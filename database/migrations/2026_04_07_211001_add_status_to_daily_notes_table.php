@@ -7,13 +7,16 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Run the migrations.
+     * Daily notes disimpan di tabel `issues` (lihat App\Models\DailyNote::$table).
+     * Kolom `status` sudah ada di skema produksi, jadi penambahan diguard agar idempotent.
      */
     public function up(): void
     {
-        Schema::table('daily_notes', function (Blueprint $table) {
-            $table->tinyInteger('status')->default(0)->after('activities');
-        });
+        if (Schema::hasTable('issues') && ! Schema::hasColumn('issues', 'status')) {
+            Schema::table('issues', function (Blueprint $table) {
+                $table->tinyInteger('status')->default(0);
+            });
+        }
     }
 
     /**
@@ -21,8 +24,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('daily_notes', function (Blueprint $table) {
-            $table->dropColumn('status');
-        });
+        if (Schema::hasTable('issues') && Schema::hasColumn('issues', 'status')) {
+            Schema::table('issues', function (Blueprint $table) {
+                $table->dropColumn('status');
+            });
+        }
     }
 };

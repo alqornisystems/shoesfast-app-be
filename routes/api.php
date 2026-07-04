@@ -28,9 +28,9 @@ Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
 });
 
-// Webhook Routes (No Authentication Required)
-Route::post('webhook', [WebhookController::class, 'whatsapp']);
-Route::post('webhook-device', [WebhookController::class, 'device']);
+// WhatsApp Cloud API Webhook (No Authentication Required)
+// GET = verifikasi langganan Meta, POST = pesan masuk
+Route::match(['get', 'post'], 'webhook', [WebhookController::class, 'whatsapp']);
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {

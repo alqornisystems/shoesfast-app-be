@@ -8,18 +8,18 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Treatment;
 use App\Services\ReportCacheService;
-use App\Services\WablasService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class OrderController extends Controller
 {
-    protected WablasService $wablas;
+    protected WhatsAppService $whatsapp;
 
-    public function __construct(WablasService $wablas)
+    public function __construct(WhatsAppService $whatsapp)
     {
-        $this->wablas = $wablas;
+        $this->whatsapp = $whatsapp;
     }
 
     /**
@@ -306,7 +306,7 @@ class OrderController extends Controller
                     ."Login menggunakan nomor WhatsApp Anda.\n\n"
                     .'Terima kasih! 🙏';
 
-                $this->wablas->sendMessage($customer->phone, $message);
+                $this->whatsapp->sendMessage($customer->phone, $message);
             }
 
             return response()->json([
@@ -375,7 +375,7 @@ class OrderController extends Controller
                         ."Review Anda sangat membantu kami untuk terus meningkatkan kualitas layanan.\n\n"
                         .'Terima kasih! 🙏';
 
-                    $this->wablas->sendMessage($customer->phone, $message);
+                    $this->whatsapp->sendMessage($customer->phone, $message);
                 }
             }
 

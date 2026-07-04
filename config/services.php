@@ -35,10 +35,13 @@ return [
         ],
     ],
 
-    'wablas' => [
-        'enabled' => env('WABLAS_ENABLED', false),
-        'url' => env('WABLAS_URL', 'https://console.wablas.com'),
-        'token' => env('WABLAS_TOKEN', ''),
+    'whatsapp' => [
+        'enabled' => env('WHATSAPP_ENABLED', false),
+        'url' => env('WHATSAPP_API_URL', 'https://graph.facebook.com'),
+        'version' => env('WHATSAPP_API_VERSION', 'v21.0'),
+        'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID', ''),
+        'token' => env('WHATSAPP_TOKEN', ''),
+        'verify_token' => env('WHATSAPP_VERIFY_TOKEN', ''),
     ],
 
     'fcm' => [
