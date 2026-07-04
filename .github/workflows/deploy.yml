@@ -1,0 +1,76 @@
+name: Deploy to SFTP
+
+on:
+  push:
+    branches: [ master ]
+
+# Cegah dua deploy jalan bersamaan (push beruntun)
+concurrency:
+  group: deploy-sftp
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (dengan history untuk diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Hitung file yang berubah & dihapus
+        id: diff
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          # Jika commit "before" tidak ada (push pertama / force push), bandingkan ke empty tree
+          if [ -z "$BEFORE" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            BEFORE="$(git hash-object -t tree /dev/null)"   # empty tree = anggap semua file baru
+          fi
+          echo "Diff dari $BEFORE ke ${{ github.sha }}"
+          git diff --name-only --diff-filter=ACMR "$BEFORE" "${{ github.sha }}" > changed.txt || true
+          git diff --name-only --diff-filter=D    "$BEFORE" "${{ github.sha }}" > deleted.txt || true
+          echo "--- File berubah (upload) ---"; cat changed.txt || true
+          echo "--- File dihapus (remove) ---"; cat deleted.txt || true
+
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y lftp
+
+      - name: Upload file yang berubah via SFTP
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          REMOTE_PATH: ${{ secrets.SFTP_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+          PORT="${SFTP_PORT:-22}"
+
+          # Bangun script perintah lftp
+          SCRIPT="set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 20;"
+          SCRIPT="$SCRIPT open -u \"$SFTP_USER\",\"$SFTP_PASSWORD\" sftp://$SFTP_HOST:$PORT;"
+
+          # Upload / update file yang berubah
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            dir=$(dirname "$f")
+            SCRIPT="$SCRIPT mkdir -p -f \"$REMOTE_PATH/$dir\";"
+            SCRIPT="$SCRIPT put -O \"$REMOTE_PATH/$dir\" \"$f\";"
+          done < changed.txt
+
+          # Hapus file yang dihapus dari repo
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            SCRIPT="$SCRIPT rm -f \"$REMOTE_PATH/$f\";"
+          done < deleted.txt
+
+          SCRIPT="$SCRIPT bye"
+
+          if [ ! -s changed.txt ] && [ ! -s deleted.txt ]; then
+            echo "Tidak ada perubahan file untuk di-deploy."
+            exit 0
+          fi
+
+          lftp -c "$SCRIPT"
+          echo "Deploy selesai."
