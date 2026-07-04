@@ -63,4 +63,12 @@ class Payment extends Model
     {
         return $this->belongsTo(Project::class, 'projects_id');
     }
+
+    /**
+     * Staff who recorded the payment.
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

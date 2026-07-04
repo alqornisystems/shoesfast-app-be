@@ -52,7 +52,10 @@ class OrderItem extends Model
         parent::boot();
 
         static::addGlobalScope('notDeleted', function ($query) {
-            $query->where('is_deleted', 0);
+            // Qualify the column so this scope stays unambiguous inside JOIN
+            // queries (order/hpp/top-service reports join orders_items with
+            // other tables that also have an is_deleted column).
+            $query->where($query->getModel()->getTable().'.is_deleted', 0);
         });
     }
 

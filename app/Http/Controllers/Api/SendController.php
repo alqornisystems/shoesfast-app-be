@@ -11,6 +11,7 @@ use App\Services\FcmService;
 use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SendController extends Controller
 {
@@ -215,38 +216,44 @@ class SendController extends Controller
             // Load relationships for response
             $send->load(['user', 'order.customer', 'orderItem']);
 
-            // Send notifications
-            $customer = $send->order->customer ?? null;
-            $courier = $send->user ?? null;
+            // Send notifications (best-effort: the send is already committed above,
+            // so a notification failure must never bubble up into a 500 response).
+            try {
+                $customer = $send->order->customer ?? null;
+                $courier = $send->user ?? null;
 
-            if ($customer && $customer->phone && $courier) {
-                $typeLabel = $send->type == 0 ? 'pickup' : 'pengiriman';
-                $courierPhone = $courier->phone ? "\nNomor Kurir: {$courier->phone}" : '';
+                if ($customer && $customer->phone && $courier) {
+                    $typeLabel = $send->type == 0 ? 'pickup' : 'pengiriman';
+                    $courierPhone = $courier->phone ? "\nNomor Kurir: {$courier->phone}" : '';
 
-                // WhatsApp to customer
-                $message = "Halo {$customer->name},\n\n"
-                    ."Kurir kami *{$courier->name}* sedang dalam perjalanan untuk {$typeLabel} pesanan Anda.\n\n"
-                    ."Order: *{$send->order->code}*{$courierPhone}\n\n"
-                    ."Anda bisa pantau lokasi kurir secara real-time di:\n"
-                    ."https://customer.shoesfast.id\n\n"
-                    ."Login menggunakan nomor WhatsApp Anda untuk melihat tracking kurir.\n\n"
-                    .'Terima kasih! 🙏';
+                    // WhatsApp to customer. Customers are not FCM subscribers in this
+                    // backend (FCM only targets user-{id} topics), so WA is the only
+                    // customer-facing channel here.
+                    $message = "Halo {$customer->name},\n\n"
+                        ."Kurir kami *{$courier->name}* sedang dalam perjalanan untuk {$typeLabel} pesanan Anda.\n\n"
+                        ."Order: *{$send->order->code}*{$courierPhone}\n\n"
+                        ."Anda bisa pantau lokasi kurir secara real-time di:\n"
+                        ."https://customer.shoesfast.id\n\n"
+                        ."Login menggunakan nomor WhatsApp Anda untuk melihat tracking kurir.\n\n"
+                        .'Terima kasih! 🙏';
 
-                $this->whatsapp->sendMessage($customer->phone, $message);
+                    $this->whatsapp->sendMessage($customer->phone, $message);
+                }
 
-                // FCM to customer
-                $fcmMessage = "Kurir {$courier->name} sedang dalam perjalanan untuk {$typeLabel} pesanan {$send->order->code}";
-                $this->fcm->sendDeliveryNotification($customer->phone, $send->order->code, $courier->name);
-            }
+                // FCM notification to courier (teknisi/kurir)
+                if ($courier) {
+                    $typeIcon = $send->type == 0 ? '📦' : '🚚';
+                    $typeLabel = $send->type == 0 ? 'Pickup' : 'Delivery';
+                    $title = "{$typeIcon} {$typeLabel} Baru Untukmu {$courier->name}";
+                    $body = "Kamu mendapatkan tugas {$typeLabel} untuk order {$send->order->code}. Jangan lupa dicek...";
 
-            // FCM notification to courier (teknisi/kurir)
-            if ($courier) {
-                $typeIcon = $send->type == 0 ? '📦' : '🚚';
-                $typeLabel = $send->type == 0 ? 'Pickup' : 'Delivery';
-                $title = "{$typeIcon} {$typeLabel} Baru Untukmu {$courier->name}";
-                $body = "Kamu mendapatkan tugas {$typeLabel} untuk order {$send->order->code}. Jangan lupa dicek...";
-
-                $this->fcm->sendUserNotification($courier->id, $title, $body, 'delivery');
+                    $this->fcm->sendUserNotification($courier->id, $title, $body, 'delivery');
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Send notification failed (send already saved)', [
+                    'send_id' => $send->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             return response()->json([

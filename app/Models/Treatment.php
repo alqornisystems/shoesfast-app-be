@@ -57,7 +57,10 @@ class Treatment extends Model
         parent::boot();
 
         static::addGlobalScope('notDeleted', function ($query) {
-            $query->where('is_deleted', 0);
+            // Qualify the column so this scope stays unambiguous inside JOIN
+            // queries (report queries join treatments with orders/orders_items/
+            // services, which also have an is_deleted column).
+            $query->where($query->getModel()->getTable().'.is_deleted', 0);
         });
     }
 

@@ -44,4 +44,9 @@ class ExpenseOperational extends Model
     {
         return $this->belongsTo(Project::class, 'projects_id');
     }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

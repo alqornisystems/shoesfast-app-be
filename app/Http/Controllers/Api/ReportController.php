@@ -64,7 +64,7 @@ class ReportController extends Controller
 
         // Summary statistics
         $totalOrders = (clone $query)->count();
-        $totalRevenue = (clone $query)->sum('total');
+        $totalRevenue = (clone $query)->sum('total_price');
         $averageOrderValue = $totalOrders > 0 ? $totalRevenue / $totalOrders : 0;
 
         // Daily sales data
@@ -72,7 +72,7 @@ class ReportController extends Controller
             ->select(
                 DB::raw('FROM_UNIXTIME(date, "%Y-%m-%d") as sale_date'),
                 DB::raw('COUNT(*) as total_orders'),
-                DB::raw('SUM(total) as total_revenue')
+                DB::raw('SUM(total_price) as total_revenue')
             )
             ->groupBy('sale_date')
             ->orderBy('sale_date', 'desc')
@@ -80,7 +80,7 @@ class ReportController extends Controller
 
         // Status breakdown
         $statusBreakdown = (clone $query)
-            ->select('status', DB::raw('COUNT(*) as count'), DB::raw('SUM(total) as revenue'))
+            ->select('status', DB::raw('COUNT(*) as count'), DB::raw('SUM(total_price) as revenue'))
             ->groupBy('status')
             ->get()
             ->map(function ($item) {
@@ -164,9 +164,9 @@ class ReportController extends Controller
         $allOrders = $query->get()->filter(function ($order) use ($status) {
             $totalPaid = Payment::where('orders_id', $order->id)
                 ->where('is_deleted', 0)
-                ->sum('total');
+                ->sum('nominal');
 
-            $credit = $order->total - $totalPaid;
+            $credit = $order->total_price - $totalPaid;
 
             // Filter by status
             if ($status === 'unpaid' && $totalPaid > 0) {
@@ -180,9 +180,9 @@ class ReportController extends Controller
         })->map(function ($order) {
             $totalPaid = Payment::where('orders_id', $order->id)
                 ->where('is_deleted', 0)
-                ->sum('total');
+                ->sum('nominal');
 
-            $credit = $order->total - $totalPaid;
+            $credit = $order->total_price - $totalPaid;
             $dueDate = $order->date + (3 * 86400); // +3 days
             $daysOverdue = $dueDate < time() ? floor((time() - $dueDate) / 86400) : 0;
 
@@ -193,7 +193,7 @@ class ReportController extends Controller
                 'customer_name' => $order->customer?->name ?? '-',
                 'customer_phone' => $order->customer?->phone ?? '-',
                 'branch_name' => $order->project?->name ?? '-',
-                'total' => $order->total,
+                'total' => $order->total_price,
                 'total_paid' => $totalPaid,
                 'credit' => $credit,
                 'due_date' => $dueDate,
@@ -291,7 +291,7 @@ class ReportController extends Controller
 
         // Summary statistics
         $totalPayments = $allPayments->count();
-        $totalAmount = $allPayments->sum('total');
+        $totalAmount = $allPayments->sum('nominal');
         $averagePayment = $totalPayments > 0 ? $totalAmount / $totalPayments : 0;
 
         // Daily payments
@@ -301,7 +301,7 @@ class ReportController extends Controller
             return [
                 'payment_date' => $date,
                 'total_payments' => $group->count(),
-                'total_amount' => $group->sum('total'),
+                'total_amount' => $group->sum('nominal'),
             ];
         })->values();
 
@@ -311,7 +311,7 @@ class ReportController extends Controller
                 'method' => $method,
                 'method_label' => $this->getPaymentMethodLabel($method),
                 'count' => $group->count(),
-                'total_amount' => $group->sum('total'),
+                'total_amount' => $group->sum('nominal'),
             ];
         })->values();
 
@@ -332,11 +332,11 @@ class ReportController extends Controller
                 'customer_name' => $payment->order?->customer?->name ?? '-',
                 'customer_phone' => $payment->order?->customer?->phone ?? '-',
                 'branch_name' => $payment->order?->project?->name ?? '-',
-                'total' => $payment->total,
+                'total' => $payment->nominal,
                 'method' => $payment->method,
                 'method_label' => $this->getPaymentMethodLabel($payment->method),
                 'user_name' => $payment->user?->name ?? '-',
-                'notes' => $payment->notes,
+                'notes' => $payment->note,
             ];
         });
 
@@ -403,10 +403,13 @@ class ReportController extends Controller
                 $page = $params['page'];
                 $perPage = $params['per_page'];
 
-        // Build query for order items
-        $query = OrderItem::query()
+        // Build query at the treatment (service) level — orders_items has no
+        // services_id, the service is on the treatment. Each row = one service
+        // performed on an item; revenue = treatments.price.
+        $query = \App\Models\Treatment::query()
+            ->join('orders_items', 'treatments.orders_items_id', '=', 'orders_items.id')
             ->join('orders', 'orders_items.orders_id', '=', 'orders.id')
-            ->join('services', 'orders_items.services_id', '=', 'services.id')
+            ->join('services', 'treatments.services_id', '=', 'services.id')
             ->leftJoin('customers', 'orders.customers_id', '=', 'customers.id')
             ->leftJoin('projects', 'orders.projects_id', '=', 'projects.id')
             ->where('orders.is_deleted', 0)
@@ -431,7 +434,7 @@ class ReportController extends Controller
         // Summary statistics
         $totalItems = (clone $query)->count();
         $totalRevenue = (clone $query)
-            ->selectRaw('SUM(orders_items.price - orders_items.discount) as total')
+            ->selectRaw('SUM(treatments.price) as total')
             ->first()->total ?? 0;
 
         // Service breakdown
@@ -439,9 +442,9 @@ class ReportController extends Controller
             ->select(
                 'services.id',
                 'services.name as service_name',
-                DB::raw('COUNT(orders_items.id) as total_count'),
-                DB::raw('SUM(orders_items.price - orders_items.discount) as total_revenue'),
-                DB::raw('AVG(orders_items.price - orders_items.discount) as avg_price')
+                DB::raw('COUNT(treatments.id) as total_count'),
+                DB::raw('SUM(treatments.price) as total_revenue'),
+                DB::raw('AVG(treatments.price) as avg_price')
             )
             ->groupBy('services.id', 'services.name')
             ->orderBy('total_count', 'desc')
@@ -468,7 +471,7 @@ class ReportController extends Controller
         $offset = ($page - 1) * $perPage;
         $items = $query
             ->select(
-                'orders_items.id',
+                'treatments.id',
                 'orders.code as order_code',
                 'orders.date as order_date',
                 'orders.status as order_status',
@@ -476,9 +479,7 @@ class ReportController extends Controller
                 'customers.phone as customer_phone',
                 'projects.name as branch_name',
                 'services.name as service_name',
-                'orders_items.price',
-                'orders_items.discount',
-                DB::raw('(orders_items.price - orders_items.discount) as net_price')
+                'treatments.price'
             )
             ->orderBy('orders.date', 'desc')
             ->offset($offset)
@@ -495,8 +496,8 @@ class ReportController extends Controller
                     'branch_name' => $item->branch_name ?? '-',
                     'service_name' => $item->service_name,
                     'price' => $item->price,
-                    'discount' => $item->discount,
-                    'net_price' => $item->net_price,
+                    'discount' => 0,
+                    'net_price' => $item->price,
                 ];
             });
 
@@ -579,21 +580,22 @@ class ReportController extends Controller
             ->with(['project', 'user'])
             ->where('is_deleted', 0);
 
+        // NB: expenses_oprationals has no `date` column — it is dated by created_at.
         if ($startDate) {
-            $operationalQuery->where('date', '>=', $startDate);
+            $operationalQuery->where('created_at', '>=', $startDate);
         }
         if ($endDate) {
-            $operationalQuery->where('date', '<=', $endDate);
+            $operationalQuery->where('created_at', '<=', $endDate);
         }
         if ($branchId) {
             $operationalQuery->where('projects_id', $branchId);
         }
 
-        $operationalExpenses = ($type === 'general') ? collect() : $operationalQuery->orderBy('date', 'desc')->get();
+        $operationalExpenses = ($type === 'general') ? collect() : $operationalQuery->orderBy('created_at', 'desc')->get();
 
         // Summary
-        $totalGeneral = $generalExpenses->sum('total');
-        $totalOperational = $operationalExpenses->sum('total');
+        $totalGeneral = $generalExpenses->sum('nominal');
+        $totalOperational = $operationalExpenses->sum('nominal');
         $totalExpenses = $totalGeneral + $totalOperational;
 
         // Category breakdown for general expenses
@@ -601,19 +603,19 @@ class ReportController extends Controller
             return [
                 'category' => $category ?: 'Tidak Berkategori',
                 'count' => $group->count(),
-                'total' => $group->sum('total'),
+                'total' => $group->sum('nominal'),
             ];
         })->values();
 
-        // Daily expenses
+        // Daily expenses (operational rows fall back to created_at for their date)
         $allExpenses = $generalExpenses->merge($operationalExpenses);
         $dailyExpenses = $allExpenses->groupBy(function ($expense) {
-            return date('Y-m-d', $expense->date);
+            return date('Y-m-d', $expense->date ?? $expense->created_at);
         })->map(function ($group, $date) {
             return [
                 'expense_date' => $date,
                 'total_expenses' => $group->count(),
-                'total_amount' => $group->sum('total'),
+                'total_amount' => $group->sum('nominal'),
             ];
         })->sortByDesc('expense_date')->values();
 
@@ -624,8 +626,8 @@ class ReportController extends Controller
                 'date' => $expense->date,
                 'branch_name' => $expense->project?->name ?? '-',
                 'category' => $expense->category ?: 'Tidak Berkategori',
-                'description' => $expense->description,
-                'total' => $expense->total,
+                'description' => $expense->note,
+                'total' => $expense->nominal,
                 'user_name' => $expense->user?->name ?? '-',
                 'type' => 'general',
             ];
@@ -635,11 +637,11 @@ class ReportController extends Controller
         $operationalData = $operationalExpenses->map(function ($expense) {
             return [
                 'id' => $expense->id,
-                'date' => $expense->date,
+                'date' => $expense->created_at,
                 'branch_name' => $expense->project?->name ?? '-',
                 'category' => 'Operasional',
-                'description' => $expense->description,
-                'total' => $expense->total,
+                'description' => $expense->note,
+                'total' => $expense->nominal,
                 'user_name' => $expense->user?->name ?? '-',
                 'type' => 'operational',
             ];
@@ -696,9 +698,12 @@ class ReportController extends Controller
                 $branchId = $params['branch_id'];
 
         // Get all services with their sales data
-        $servicesQuery = OrderItem::query()
+        // Services are attached to order items via treatments (orders_items has no
+        // services_id); revenue per service = SUM(treatments.price).
+        $servicesQuery = \App\Models\Treatment::query()
+            ->join('orders_items', 'treatments.orders_items_id', '=', 'orders_items.id')
             ->join('orders', 'orders_items.orders_id', '=', 'orders.id')
-            ->join('services', 'orders_items.services_id', '=', 'services.id')
+            ->join('services', 'treatments.services_id', '=', 'services.id')
             ->where('orders.is_deleted', 0)
             ->where('orders_items.is_deleted', 0)
             ->whereIn('orders.status', [1, 2]); // Process or Done
@@ -717,9 +722,9 @@ class ReportController extends Controller
             ->select(
                 'services.id as service_id',
                 'services.name as service_name',
-                DB::raw('COUNT(orders_items.id) as total_sold'),
-                DB::raw('SUM(orders_items.price - orders_items.discount) as total_revenue'),
-                DB::raw('AVG(orders_items.price - orders_items.discount) as avg_price')
+                DB::raw('COUNT(treatments.id) as total_sold'),
+                DB::raw('SUM(treatments.price) as total_revenue'),
+                DB::raw('AVG(treatments.price) as avg_price')
             )
             ->groupBy('services.id', 'services.name')
             ->get();
@@ -822,10 +827,13 @@ class ReportController extends Controller
             $revenueQuery->where('projects_id', $branchId);
         }
 
-        $totalRevenue = $revenueQuery->sum('total');
+        $totalRevenue = $revenueQuery->sum('total_price');
 
         // 2. Calculate COGS (Cost of Goods Sold)
-        $servicesQuery = OrderItem::query()
+        // Services are attached to order items via treatments (orders_items has no
+        // services_id); count services sold per service through treatments.
+        $servicesQuery = \App\Models\Treatment::query()
+            ->join('orders_items', 'treatments.orders_items_id', '=', 'orders_items.id')
             ->join('orders', 'orders_items.orders_id', '=', 'orders.id')
             ->where('orders.is_deleted', 0)
             ->where('orders_items.is_deleted', 0)
@@ -843,10 +851,10 @@ class ReportController extends Controller
 
         $servicesData = $servicesQuery
             ->select(
-                'orders_items.services_id',
-                DB::raw('COUNT(orders_items.id) as total_sold')
+                'treatments.services_id',
+                DB::raw('COUNT(treatments.id) as total_sold')
             )
-            ->groupBy('orders_items.services_id')
+            ->groupBy('treatments.services_id')
             ->get();
 
         $totalCogs = 0;
@@ -868,19 +876,19 @@ class ReportController extends Controller
 
         if ($startDate) {
             $generalExpensesQuery->where('date', '>=', $startDate);
-            $operationalExpensesQuery->where('date', '>=', $startDate);
+            $operationalExpensesQuery->where('created_at', '>=', $startDate);
         }
         if ($endDate) {
             $generalExpensesQuery->where('date', '<=', $endDate);
-            $operationalExpensesQuery->where('date', '<=', $endDate);
+            $operationalExpensesQuery->where('created_at', '<=', $endDate);
         }
         if ($branchId) {
             $generalExpensesQuery->where('projects_id', $branchId);
             $operationalExpensesQuery->where('projects_id', $branchId);
         }
 
-        $generalExpenses = $generalExpensesQuery->sum('total');
-        $operationalExpenses = $operationalExpensesQuery->sum('total');
+        $generalExpenses = $generalExpensesQuery->sum('nominal');
+        $operationalExpenses = $operationalExpensesQuery->sum('nominal');
         $totalExpenses = $generalExpenses + $operationalExpenses;
 
         // 4. Calculate Profit
@@ -914,20 +922,20 @@ class ReportController extends Controller
                     $monthRevenue = (clone $revenueQuery)
                         ->where('date', '>=', $monthStart)
                         ->where('date', '<=', $monthEnd)
-                        ->sum('total');
+                        ->sum('total_price');
 
                     $monthExpenses = \App\Models\Expense::query()
                         ->where('is_deleted', 0)
                         ->where('date', '>=', $monthStart)
                         ->where('date', '<=', $monthEnd)
                         ->when($branchId, fn($q) => $q->where('projects_id', $branchId))
-                        ->sum('total') +
+                        ->sum('nominal') +
                         \App\Models\ExpenseOperational::query()
                         ->where('is_deleted', 0)
-                        ->where('date', '>=', $monthStart)
-                        ->where('date', '<=', $monthEnd)
+                        ->where('created_at', '>=', $monthStart)
+                        ->where('created_at', '<=', $monthEnd)
                         ->when($branchId, fn($q) => $q->where('projects_id', $branchId))
-                        ->sum('total');
+                        ->sum('nominal');
 
                     $monthlyData[] = [
                         'month' => $month->format('Y-m'),
@@ -1005,21 +1013,18 @@ class ReportController extends Controller
             });
         }
 
-        $totalCashIn = $paymentsQuery->sum('total');
+        $totalCashIn = $paymentsQuery->sum('nominal');
         $cashInCount = (clone $paymentsQuery)->count();
 
-        // Payment method breakdown
-        $paymentMethods = (clone $paymentsQuery)
-            ->select('method', DB::raw('SUM(total) as total'))
-            ->groupBy('method')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'method' => $item->method ?: 'Tidak Diketahui',
-                    'method_label' => $this->getPaymentMethodLabel($item->method),
-                    'total' => $item->total,
-                ];
-            });
+        // The payments table has no payment-method column, so cash-in is reported
+        // as a single bucket rather than a (non-existent) per-method breakdown.
+        $paymentMethods = collect([
+            [
+                'method' => 'all',
+                'method_label' => 'Semua Pembayaran',
+                'total' => $totalCashIn,
+            ],
+        ]);
 
         // 2. Cash Out (from expenses)
         $generalExpensesQuery = \App\Models\Expense::query()
@@ -1029,18 +1034,18 @@ class ReportController extends Controller
 
         if ($startDate) {
             $generalExpensesQuery->where('date', '>=', $startDate);
-            $operationalExpensesQuery->where('date', '>=', $startDate);
+            $operationalExpensesQuery->where('created_at', '>=', $startDate);
         }
         if ($endDate) {
             $generalExpensesQuery->where('date', '<=', $endDate);
-            $operationalExpensesQuery->where('date', '<=', $endDate);
+            $operationalExpensesQuery->where('created_at', '<=', $endDate);
         }
         if ($branchId) {
             $generalExpensesQuery->where('projects_id', $branchId);
             $operationalExpensesQuery->where('projects_id', $branchId);
         }
 
-        $totalCashOut = $generalExpensesQuery->sum('total') + $operationalExpensesQuery->sum('total');
+        $totalCashOut = $generalExpensesQuery->sum('nominal') + $operationalExpensesQuery->sum('nominal');
         $cashOutCount = $generalExpensesQuery->count() + $operationalExpensesQuery->count();
 
         // 3. Net Cash Flow
@@ -1069,8 +1074,8 @@ class ReportController extends Controller
 
             $operationalExpenses = \App\Models\ExpenseOperational::query()
                 ->where('is_deleted', 0)
-                ->where('date', '>=', $startDate)
-                ->where('date', '<=', $endDate)
+                ->where('created_at', '>=', $startDate)
+                ->where('created_at', '<=', $endDate)
                 ->when($branchId, fn($q) => $q->where('projects_id', $branchId))
                 ->get();
 
@@ -1082,7 +1087,7 @@ class ReportController extends Controller
                 if (!isset($dailyData[$date])) {
                     $dailyData[$date] = ['cash_in' => 0, 'cash_out' => 0];
                 }
-                $dailyData[$date]['cash_in'] += $payment->total;
+                $dailyData[$date]['cash_in'] += $payment->nominal;
             }
 
             foreach ($expenses as $expense) {
@@ -1090,15 +1095,15 @@ class ReportController extends Controller
                 if (!isset($dailyData[$date])) {
                     $dailyData[$date] = ['cash_in' => 0, 'cash_out' => 0];
                 }
-                $dailyData[$date]['cash_out'] += $expense->total;
+                $dailyData[$date]['cash_out'] += $expense->nominal;
             }
 
             foreach ($operationalExpenses as $expense) {
-                $date = date('Y-m-d', $expense->date);
+                $date = date('Y-m-d', $expense->created_at);
                 if (!isset($dailyData[$date])) {
                     $dailyData[$date] = ['cash_in' => 0, 'cash_out' => 0];
                 }
-                $dailyData[$date]['cash_out'] += $expense->total;
+                $dailyData[$date]['cash_out'] += $expense->nominal;
             }
 
             // Convert to array and calculate running balance
@@ -1399,9 +1404,12 @@ class ReportController extends Controller
                 $limit = $params['limit'];
 
         // Build query for order items
-        $query = OrderItem::query()
+        // Services are attached to order items via treatments (orders_items has no
+        // services_id); revenue per service = SUM(treatments.price).
+        $query = \App\Models\Treatment::query()
+            ->join('orders_items', 'treatments.orders_items_id', '=', 'orders_items.id')
             ->join('orders', 'orders_items.orders_id', '=', 'orders.id')
-            ->join('services', 'orders_items.services_id', '=', 'services.id')
+            ->join('services', 'treatments.services_id', '=', 'services.id')
             ->where('orders.is_deleted', 0)
             ->where('orders_items.is_deleted', 0)
             ->whereIn('orders.status', [1, 2]); // Process or Done
@@ -1423,9 +1431,9 @@ class ReportController extends Controller
             ->select(
                 'services.id',
                 'services.name as service_name',
-                DB::raw('COUNT(orders_items.id) as total_count'),
-                DB::raw('SUM(orders_items.price - orders_items.discount) as total_revenue'),
-                DB::raw('AVG(orders_items.price - orders_items.discount) as avg_price')
+                DB::raw('COUNT(treatments.id) as total_count'),
+                DB::raw('SUM(treatments.price) as total_revenue'),
+                DB::raw('AVG(treatments.price) as avg_price')
             )
             ->groupBy('services.id', 'services.name')
             ->orderBy('total_count', 'desc')
@@ -1820,6 +1828,8 @@ class ReportController extends Controller
             'end_date'   => ['nullable', 'integer'],
             'branch_id'  => ['nullable', 'integer', 'exists:projects,id'],
             'user_id'    => ['nullable', 'integer', 'exists:users,id'],
+            'page'       => ['nullable', 'integer', 'min:1'],
+            'per_page'   => ['nullable', 'integer', 'min:10', 'max:500'],
         ]);
 
         $params = [
@@ -1827,6 +1837,8 @@ class ReportController extends Controller
             'end_date' => $request->input('end_date'),
             'branch_id' => $request->input('branch_id'),
             'user_id' => $request->input('user_id'),
+            'page' => $request->input('page', 1),
+            'per_page' => $request->input('per_page', 50),
         ];
 
         $data = ReportCacheService::remember(
@@ -1837,6 +1849,8 @@ class ReportController extends Controller
                 $endDate = $params['end_date'];
                 $branchId = $params['branch_id'];
                 $userId = $params['user_id'];
+                $page = $params['page'];
+                $perPage = $params['per_page'];
 
         $query = \App\Models\DailyNote::query()
             ->with(['user', 'project'])
@@ -1877,7 +1891,11 @@ class ReportController extends Controller
             ];
         })->sortByDesc('date')->values();
 
-        $data = $notes->map(function ($note) {
+        // Paginate the detail rows. The full set (thousands of notes) is too large
+        // to cache in one row under MySQL's max_allowed_packet, so only a page of
+        // detail is returned; the aggregates above are still computed from all notes.
+        $offset = ($page - 1) * $perPage;
+        $data = $notes->slice($offset, $perPage)->map(function ($note) {
             return [
                 'id' => $note->id,
                 'user_name' => $note->user?->name,
@@ -1886,7 +1904,7 @@ class ReportController extends Controller
                 'note' => $note->title,
                 'activities' => $note->description,
                 ];
-            });
+            })->values();
 
                 return [
                     'summary' => [
@@ -1897,6 +1915,12 @@ class ReportController extends Controller
                     'user_stats' => $userStats,
                     'daily_breakdown' => $dailyBreakdown,
                     'data' => $data,
+                    'pagination' => [
+                        'current_page' => $page,
+                        'per_page' => $perPage,
+                        'total' => $totalNotes,
+                        'total_pages' => (int) ceil($totalNotes / $perPage),
+                    ],
                 ];
             },
             ReportCacheService::STANDARD_REPORT_TTL

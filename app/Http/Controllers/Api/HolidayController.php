@@ -27,9 +27,22 @@ class HolidayController extends Controller
             ? strtotime($request->input('end_date').' 23:59:59')
             : strtotime('last day of december this year');
 
-        $holidays = Holiday::with('project')
+        // A holiday with projects_id = null is company-wide ("Semua Cabang") and
+        // must be visible from every branch. The generic BranchScoped scope only
+        // matches projects_id = active branch (dropping nulls), so bypass it and
+        // apply "active branch OR global" ourselves. Super admin viewing all
+        // branches (active = null) keeps seeing everything.
+        $activeBranch = app('branch.context')->getActiveBranch();
+
+        $holidays = Holiday::withoutBranchScope()
+            ->with('project')
             ->where('date', '>=', $startDate)
             ->where('date', '<=', $endDate)
+            ->when($activeBranch !== null, function ($query) use ($activeBranch) {
+                $query->where(function ($q) use ($activeBranch) {
+                    $q->where('projects_id', $activeBranch)->orWhereNull('projects_id');
+                });
+            })
             ->orderBy('date', 'asc')
             ->get();
 
@@ -66,8 +79,10 @@ class HolidayController extends Controller
         $currentUser = $request->user();
         $date = strtotime($request->input('date'));
 
-        // Check if already exists for this date and branch
-        $existing = Holiday::where('date', '>=', strtotime(date('Y-m-d', $date)))
+        // Check if already exists for this date and branch. Bypass the branch
+        // scope so the check works for global (null) holidays too.
+        $existing = Holiday::withoutBranchScope()
+            ->where('date', '>=', strtotime(date('Y-m-d', $date)))
             ->where('date', '<', strtotime(date('Y-m-d', $date).' +1 day'))
             ->where(function ($query) use ($request) {
                 if ($request->input('branch_id')) {
@@ -84,13 +99,16 @@ class HolidayController extends Controller
             ], 422);
         }
 
-        $holiday = Holiday::create([
+        // Persist the chosen branch_id verbatim — a null means "Semua Cabang".
+        // withoutEvents skips BranchScoped's creating hook, which would otherwise
+        // overwrite an explicit null with the creator's active branch.
+        $holiday = Holiday::withoutEvents(fn () => Holiday::create([
             'date' => $date,
             'name' => $request->input('name'),
             'description' => $request->input('description'),
             'projects_id' => $request->input('branch_id'),
             'created_by' => $currentUser->id,
-        ]);
+        ]));
 
         return response()->json([
             'message' => 'Hari libur berhasil ditambahkan',
@@ -111,7 +129,8 @@ class HolidayController extends Controller
             'branch_id' => ['nullable', 'integer', 'exists:projects,id'],
         ]);
 
-        $holiday = Holiday::findOrFail($id);
+        // Bypass the branch scope so global (null) holidays are editable too.
+        $holiday = Holiday::withoutBranchScope()->findOrFail($id);
         $currentUser = $request->user();
 
         $holiday->update([
@@ -134,7 +153,8 @@ class HolidayController extends Controller
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
-        $holiday = Holiday::findOrFail($id);
+        // Bypass the branch scope so global (null) holidays are deletable too.
+        $holiday = Holiday::withoutBranchScope()->findOrFail($id);
         $currentUser = $request->user();
 
         $holiday->update([
