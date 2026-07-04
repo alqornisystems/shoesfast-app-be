@@ -1,12 +1,13 @@
-name: Deploy to SFTP
+name: Deploy to FTP
 
 on:
   push:
     branches: [ master ]
+  workflow_dispatch:   # bisa dijalankan manual dari tab Actions
 
 # Cegah dua deploy jalan bersamaan (push beruntun)
 concurrency:
-  group: deploy-sftp
+  group: deploy-ftp
   cancel-in-progress: false
 
 jobs:
@@ -23,13 +24,18 @@ jobs:
         run: |
           set -euo pipefail
           BEFORE="${{ github.event.before }}"
-          # Jika commit "before" tidak ada (push pertama / force push), bandingkan ke empty tree
-          if [ -z "$BEFORE" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            BEFORE="$(git hash-object -t tree /dev/null)"   # empty tree = anggap semua file baru
+          ZERO="0000000000000000000000000000000000000000"
+          # Run manual / push pertama / force-push: default bandingkan ke commit sebelumnya (bukan seluruh repo)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             || [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ] \
+             || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            BEFORE="$(git rev-parse HEAD~1 2>/dev/null || git hash-object -t tree /dev/null)"
           fi
           echo "Diff dari $BEFORE ke ${{ github.sha }}"
-          git diff --name-only --diff-filter=ACMR "$BEFORE" "${{ github.sha }}" > changed.txt || true
-          git diff --name-only --diff-filter=D    "$BEFORE" "${{ github.sha }}" > deleted.txt || true
+          # Abaikan file yang tak perlu ada di server (CI config, dsb)
+          EXCLUDE='^\.github/'
+          git diff --name-only --diff-filter=ACMR "$BEFORE" "${{ github.sha }}" | grep -Ev "$EXCLUDE" > changed.txt || true
+          git diff --name-only --diff-filter=D    "$BEFORE" "${{ github.sha }}" | grep -Ev "$EXCLUDE" > deleted.txt || true
           echo "--- File berubah (upload) ---"; cat changed.txt || true
           echo "--- File dihapus (remove) ---"; cat deleted.txt || true
 
