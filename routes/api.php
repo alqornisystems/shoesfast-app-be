@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\ExpenseOperationalController;
@@ -43,6 +44,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('profile', [AuthController::class, 'updateProfile']);
         Route::put('change-password', [AuthController::class, 'changePassword']);
     });
+
+    Route::get('dashboard', [DashboardController::class, 'index']);
 
     Route::apiResource('roles', RoleController::class);
     Route::apiResource('users', UserController::class);
