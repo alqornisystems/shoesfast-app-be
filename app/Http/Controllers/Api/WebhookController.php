@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\Holiday;
 use App\Models\OfflineMessage;
 use App\Models\Order;
 use App\Services\WhatsAppService;
@@ -66,10 +67,6 @@ class WebhookController extends Controller
             $currentHour = (int) date('H');
             $currentDay = date('w'); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
             $today = date('Y-m-d');
-
-            // Holiday period (Lebaran)
-            $startHoliday = '2025-03-30';
-            $endHoliday = '2025-04-06';
 
             // Hanya proses pesan teks individual (bukan grup) dengan pengirim valid
             if ($phone !== '' && $messageType === 'text' && !$isGroup) {
@@ -137,41 +134,32 @@ class WebhookController extends Controller
                     }
                 }
 
-                // If not a customer, send auto-reply based on message content
-                if (!$customer && !empty($message)) {
-                    $autoReply = $this->getAutoReply($message);
-                    if ($autoReply) {
-                        $this->sendWhatsAppMessage($phone, $autoReply);
-                        return response()->json([
-                            'success' => true,
-                            'message' => 'Auto-reply sent',
-                            'reply' => $autoReply,
-                        ]);
-                    }
-                }
-
                 // Check if already sent offline message today
                 $offlineLog = OfflineMessage::where('phone', $normalizedPhone)
                     ->where('date', $today)
                     ->first();
 
                 if (!$offlineLog) {
-                    // Check if during holiday period
-                    if ($today >= $startHoliday && $today <= $endHoliday) {
+                    // Cek libur dari fitur Holiday (tabel holidays) untuk tanggal hari ini
+                    $todayStart = strtotime($today);
+                    $todayEnd = strtotime($today . ' 23:59:59');
+                    $holiday = Holiday::withoutBranchScope()
+                        ->whereBetween('date', [$todayStart, $todayEnd])
+                        ->first();
+
+                    if ($holiday) {
                         $holidayMessage = "Halo Sobat *SHOESFAST* 👋🏻\n\n"
                             . "Terima kasih sudah menghubungi kami! 🤗\n\n"
-                            . "Saat ini kami sedang *LIBUR LEBARAN* mulai *30 Maret - 6 April 2025*.\n\n"
-                            . "📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas setelah tim kami kembali aktif pada *7 April 2025*.\n\n"
-                            . "Selamat merayakan Hari Raya Idul Fitri 1446H! 🌙✨\n"
-                            . "Mohon maaf lahir dan batin. 🙏😊\n\n"
-                            . "- *SHOESFAST* -\n"
-                            . "Pesan sambil tiduran 😊";
+                            . "Saat ini kami sedang *LIBUR* — {$holiday->name}. 🗓️\n\n"
+                            . "📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas setelah kami kembali aktif. 🙏😊\n\n"
+                            . "- *SHOESFAST* -";
 
                         $this->sendOfflineMessage($normalizedPhone, $holidayMessage, $today);
 
                         return response()->json([
                             'success' => true,
                             'message' => 'Holiday message sent',
+                            'holiday' => $holiday->name,
                         ]);
                     }
 
@@ -274,135 +262,6 @@ class WebhookController extends Controller
     private function sendWhatsAppMessage(string $phone, string $message): array
     {
         return $this->whatsapp->sendMessage($phone, $message);
-    }
-
-    /**
-     * Get auto-reply based on message content
-     */
-    private function getAutoReply(string $message): ?string
-    {
-        $message = mb_strtolower(trim($message));
-
-        // Greeting keywords
-        $greetings = [
-            'hello', 'helo', 'hai', 'halo', 'hi', 'hei', 'hey',
-            'pagi', 'siang', 'sore', 'malam',
-            'assalamualaikum', 'ass', 'salam',
-            'min', 'admin', 'bro', 'sis',
-        ];
-
-        // Location keywords
-        $locationKeywords = [
-            'dimana', 'lokasi', 'alamat', 'tempat', 'maps', 'arah',
-        ];
-
-        // Payment keywords
-        $transferKeywords = [
-            'transfer', 'bayar', 'rekening', 'pembayaran', 'ovo', 'dana',
-        ];
-
-        // Pickup keywords
-        $pickupKeywords = [
-            'pickup', 'diambil', 'jemput', 'kurir',
-        ];
-
-        // Service keywords
-        $serviceKeywords = [
-            'layanan', 'service', 'bisa apa', 'ada apa', 'paket',
-        ];
-
-        // Check for greeting — reply with the welcome + order form so the
-        // customer can fill it and get an order auto-created (see parseOrderForm).
-        foreach ($greetings as $keyword) {
-            if (str_contains($message, $keyword)) {
-                return $this->orderFormMessage();
-            }
-        }
-
-        // Check for location
-        foreach ($locationKeywords as $keyword) {
-            if (str_contains($message, $keyword)) {
-                return "📍 *Lokasi SHOESFAST*\n\n"
-                    . "🏠 Alamat:\n"
-                    . "Jl. Cibaduyut Raya No. 123\n"
-                    . "Bandung, Jawa Barat 40239\n\n"
-                    . "🕒 Jam Operasional:\n"
-                    . "Senin - Sabtu: 08:00 - 15:00 WIB\n"
-                    . "Minggu: Libur\n\n"
-                    . "📱 Kontak:\n"
-                    . "WhatsApp: 0897-0830-732\n\n"
-                    . "🗺️ Maps: https://maps.app.goo.gl/shoesfast\n\n"
-                    . "- *SHOESFAST* -\n"
-                    . "Pesan sambil tiduran 😊";
-            }
-        }
-
-        // Check for payment
-        foreach ($transferKeywords as $keyword) {
-            if (str_contains($message, $keyword)) {
-                return "💳 *Metode Pembayaran SHOESFAST*\n\n"
-                    . "Kami menerima pembayaran melalui:\n\n"
-                    . "🏦 Transfer Bank:\n"
-                    . "• BCA: 1234567890 (a/n PT Shoesfast)\n"
-                    . "• Mandiri: 9876543210 (a/n PT Shoesfast)\n\n"
-                    . "💰 E-Wallet:\n"
-                    . "• OVO: 0897-0830-732\n"
-                    . "• DANA: 0897-0830-732\n\n"
-                    . "💵 Cash (di toko)\n\n"
-                    . "Setelah transfer, mohon kirim bukti pembayaran ya! 📸\n\n"
-                    . "- *SHOESFAST* -\n"
-                    . "Pesan sambil tiduran 😊";
-            }
-        }
-
-        // Check for pickup — send the order form so it can be auto-processed
-        foreach ($pickupKeywords as $keyword) {
-            if (str_contains($message, $keyword)) {
-                return $this->orderFormMessage();
-            }
-        }
-
-        // Check for services
-        foreach ($serviceKeywords as $keyword) {
-            if (str_contains($message, $keyword)) {
-                return "🛠️ *Layanan SHOESFAST*\n\n"
-                    . "Kami menyediakan berbagai layanan perawatan sepatu & tas:\n\n"
-                    . "👟 *Sepatu:*\n"
-                    . "• Express Clean\n"
-                    . "• Deep Clean\n"
-                    . "• Repaint\n"
-                    . "• Repair\n"
-                    . "• Unyellowing\n\n"
-                    . "👜 *Tas:*\n"
-                    . "• Bag Spa\n"
-                    . "• Repair\n"
-                    . "• Recolor\n\n"
-                    . "💰 Harga mulai dari Rp 25.000\n"
-                    . "⏱️ Estimasi 3-7 hari kerja\n\n"
-                    . "Untuk info lebih detail, silakan chat admin kami! 😊\n\n"
-                    . "- *SHOESFAST* -\n"
-                    . "Pesan sambil tiduran 😊";
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Welcome + order form message. When a customer replies with this form
-     * filled in, parseOrderForm() picks it up and an order is auto-created.
-     */
-    private function orderFormMessage(): string
-    {
-        return "Selamat datang di layanan *SHOESFAST* 👋🏻\n\n"
-            . "Jam Operasional jasa pelayanan kurir cuci *14.00-17.00* ✨\n"
-            . "Untuk layanan pickup delivery bisa isi Form order berikut ya kak :\n\n"
-            . "Nama : \n"
-            . "Alamat : \n"
-            . "No WA : \n"
-            . "Instagram : \n"
-            . "Barang yg diambil : \n\n"
-            . "Cukup balas pesan ini dengan form yang sudah diisi, ya kak 😊";
     }
 
     /**
