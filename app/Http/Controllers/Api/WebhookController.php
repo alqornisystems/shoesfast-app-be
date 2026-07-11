@@ -97,20 +97,16 @@ class WebhookController extends Controller
                         DB::commit();
 
                         // Send confirmation message
-                        $confirmMessage = "✅ *Terima kasih, {$customer->name}!*\n\n"
-                            . "Data order Anda sudah kami terima:\n\n"
-                            . "📋 *Detail Order:*\n"
-                            . "• Kode Order: *{$order->code}*\n"
+                        $confirmMessage = "✅ *Pesanan kamu sudah tercatat!*\n\n"
+                            . "No. Invoice: *{$order->code}*\n\n"
+                            . "📋 *Detail:*\n"
                             . "• Nama: {$customer->name}\n"
-                            . "• No. WA: {$phone}\n"
-                            . "• Alamat: " . ($orderData['address'] ?? 'Belum diisi') . "\n"
-                            . "• Barang: " . ($orderData['items'] ?? 'Belum diisi') . "\n\n"
+                            . "• Barang: " . ($orderData['items'] ?? 'Belum diisi') . "\n"
+                            . "• Alamat: " . ($orderData['address'] ?? 'Belum diisi') . "\n\n"
                             . "📌 *Status:* Menunggu konfirmasi admin\n\n"
-                            . "Admin kami akan segera menghubungi Anda untuk konfirmasi pickup dan pembayaran. 😊\n\n"
-                            . "💰 *Note Pembayaran:*\n"
-                            . "Untuk transaksi di bawah Rp 500.000, pembayaran wajib di awal ya!\n\n"
-                            . "- *SHOESFAST* -\n"
-                            . "Pesan sambil tiduran 😊";
+                            . "Simpan nomor invoice di atas ya kak. Admin kami akan segera menghubungi untuk konfirmasi pickup & pembayaran. 😊\n\n"
+                            . "💰 Untuk transaksi di bawah Rp 500.000, pembayaran wajib di awal ya!\n\n"
+                            . "- *SHOESFAST* -";
 
                         $this->sendWhatsAppMessage($phone, $confirmMessage);
 
