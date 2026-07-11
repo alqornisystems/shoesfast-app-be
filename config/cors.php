@@ -1,25 +1,29 @@
 <?php
 
-return [
+/*
+|--------------------------------------------------------------------------
+| Cross-Origin Resource Sharing (CORS) Configuration
+|--------------------------------------------------------------------------
+|
+| Origin diambil dari FRONTEND_URL (dipisah koma) supaya spec-valid saat
+| supports_credentials = true (Access-Control-Allow-Origin tidak boleh "*"
+| bila credentials diizinkan). Fallback ke "*" hanya bila FRONTEND_URL kosong,
+| dan dalam kasus itu credentials dimatikan agar tetap valid.
+|
+*/
 
-    /*
-    |--------------------------------------------------------------------------
-    | Cross-Origin Resource Sharing (CORS) Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Here you may configure your settings for cross-origin resource sharing
-    | or "CORS". This determines what cross-origin operations may execute
-    | in web browsers. You are free to adjust these settings as needed.
-    |
-    | To learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
-    |
-    */
+$origins = array_values(array_filter(array_map(
+    'trim',
+    explode(',', (string) env('FRONTEND_URL', ''))
+)));
+
+return [
 
     'paths' => ['api/*', 'sanctum/csrf-cookie', 'storage/*'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => $origins ?: ['*'],
 
     'allowed_origins_patterns' => [],
 
@@ -29,6 +33,7 @@ return [
 
     'max_age' => 3600,
 
-    'supports_credentials' => true,
+    // Valid hanya jika origin eksplisit; kalau fallback "*", matikan credentials.
+    'supports_credentials' => (bool) $origins,
 
 ];
