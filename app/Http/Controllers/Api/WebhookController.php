@@ -310,14 +310,11 @@ class WebhookController extends Controller
             'layanan', 'service', 'bisa apa', 'ada apa', 'paket',
         ];
 
-        // Check for greeting
+        // Check for greeting — reply with the welcome + order form so the
+        // customer can fill it and get an order auto-created (see parseOrderForm).
         foreach ($greetings as $keyword) {
             if (str_contains($message, $keyword)) {
-                return "Halo Sobat *SHOESFAST*! 👋🏻\n\n"
-                    . "Terima kasih sudah menghubungi kami! 🤗\n\n"
-                    . "Ada yang bisa kami bantu? Silakan kirim pesan Anda, tim kami akan segera merespons. 😊\n\n"
-                    . "- *SHOESFAST* -\n"
-                    . "Pesan sambil tiduran 😊";
+                return $this->orderFormMessage();
             }
         }
 
@@ -357,20 +354,10 @@ class WebhookController extends Controller
             }
         }
 
-        // Check for pickup
+        // Check for pickup — send the order form so it can be auto-processed
         foreach ($pickupKeywords as $keyword) {
             if (str_contains($message, $keyword)) {
-                return "🚚 *Layanan Pickup SHOESFAST*\n\n"
-                    . "Ya, kami menyediakan layanan pickup GRATIS! 🎉\n\n"
-                    . "✅ Area Bandung: GRATIS\n"
-                    . "✅ Luar Bandung: Sesuai tarif ekspedisi\n\n"
-                    . "Untuk request pickup, silakan hubungi admin kami dengan informasi:\n"
-                    . "• Nama lengkap\n"
-                    . "• Alamat lengkap\n"
-                    . "• Nomor HP\n"
-                    . "• Jenis layanan yang diinginkan\n\n"
-                    . "- *SHOESFAST* -\n"
-                    . "Pesan sambil tiduran 😊";
+                return $this->orderFormMessage();
             }
         }
 
@@ -398,6 +385,23 @@ class WebhookController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Welcome + order form message. When a customer replies with this form
+     * filled in, parseOrderForm() picks it up and an order is auto-created.
+     */
+    private function orderFormMessage(): string
+    {
+        return "Selamat datang di layanan *SHOESFAST* 👋🏻\n\n"
+            . "Jam Operasional jasa pelayanan kurir cuci *14.00-17.00* ✨\n"
+            . "Untuk layanan pickup delivery bisa isi Form order berikut ya kak :\n\n"
+            . "Nama : \n"
+            . "Alamat : \n"
+            . "No WA : \n"
+            . "Instagram : \n"
+            . "Barang yg diambil : \n\n"
+            . "Cukup balas pesan ini dengan form yang sudah diisi, ya kak 😊";
     }
 
     /**
