@@ -18,44 +18,49 @@ class WebhookController extends Controller
     }
 
     /**
-     * WAHA webhook (WhatsApp HTTP API).
-     * POST /api/webhook -> terima event pesan masuk dari WAHA.
+     * Wablas incoming-message webhook.
+     * POST /api/webhook -> terima pesan masuk dari Wablas.
      */
     public function whatsapp(Request $request)
     {
-        // Verifikasi HMAC opsional (jika WAHA_WEBHOOK_SECRET diset)
-        $secret = config('services.waha.webhook_secret');
+        // Verifikasi secret opsional (jika WABLAS_WEBHOOK_SECRET diset) — Wablas bisa
+        // mengirimkannya lewat query param ?secret= atau field payload.
+        $secret = config('services.wablas.webhook_secret');
         if (!empty($secret)) {
-            $signature = $request->header('X-Webhook-Hmac');
-            $expected = hash_hmac('sha512', $request->getContent(), $secret);
-            if (!is_string($signature) || !hash_equals($expected, $signature)) {
-                Log::warning('WAHA webhook HMAC mismatch');
-                return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
+            $provided = (string) ($request->query('secret') ?? data_get($request->all(), 'secret', ''));
+            if (!hash_equals((string) $secret, $provided)) {
+                Log::warning('Wablas webhook secret mismatch');
+                return response()->json(['success' => false, 'message' => 'Invalid secret'], 401);
             }
         }
 
         try {
             // Log incoming webhook for debugging
-            Log::info('WAHA Webhook Received', $request->all());
+            Log::info('Wablas Webhook Received', $request->all());
 
-            $event = data_get($request->all(), 'event');
-            $payload = data_get($request->all(), 'payload', []);
+            // Payload Wablas ada di top-level, sebagian versi membungkus di "data".
+            $all = $request->all();
+            $payload = is_array(data_get($all, 'data')) ? data_get($all, 'data') : $all;
 
-            // Hanya proses event pesan masuk; abaikan status/ack/session
-            if (!in_array($event, ['message', 'message.any'], true) || !is_array($payload)) {
-                return response()->json(['success' => true, 'message' => 'Ignored event']);
-            }
-
-            // Abaikan pesan yang kita kirim sendiri
-            if (data_get($payload, 'fromMe', false)) {
+            // Abaikan pesan grup & pesan yang kita kirim sendiri
+            $isGroup = filter_var(data_get($payload, 'isGroup', false), FILTER_VALIDATE_BOOLEAN);
+            $fromMe = filter_var(data_get($payload, 'fromMe', false), FILTER_VALIDATE_BOOLEAN);
+            if ($fromMe) {
                 return response()->json(['success' => true, 'message' => 'Ignored own message']);
             }
 
-            $from = (string) data_get($payload, 'from', '');   // mis. 6281234567890@c.us
-            $phone = preg_replace('/\D/', '', $from);          // 6281234567890
-            $type = (string) data_get($payload, 'type', '');
-            $messageType = $type === 'chat' ? 'text' : $type;  // WAHA pakai "chat" untuk teks
-            $message = trim((string) data_get($payload, 'body', ''));
+            // Nomor pengirim: field "phone"/"sender"/"from"
+            $rawFrom = (string) (data_get($payload, 'phone')
+                ?: data_get($payload, 'sender')
+                ?: data_get($payload, 'from', ''));
+            $phone = preg_replace('/\D/', '', $rawFrom);       // 6281234567890
+
+            // Tipe & isi pesan: Wablas pakai "text" untuk teks
+            $type = (string) (data_get($payload, 'messageType') ?: data_get($payload, 'type', 'text'));
+            $messageType = $type === '' ? 'text' : $type;
+            $message = trim((string) (data_get($payload, 'message')
+                ?: data_get($payload, 'body')
+                ?: data_get($payload, 'text', '')));
 
             // Get current time and day
             $currentHour = (int) date('H');
@@ -67,7 +72,7 @@ class WebhookController extends Controller
             $endHoliday = '2025-04-06';
 
             // Hanya proses pesan teks individual (bukan grup) dengan pengirim valid
-            if ($phone !== '' && $messageType === 'text' && !str_ends_with($from, '@g.us')) {
+            if ($phone !== '' && $messageType === 'text' && !$isGroup) {
                 // Normalize phone number
                 $normalizedPhone = $this->normalizePhone($phone);
 

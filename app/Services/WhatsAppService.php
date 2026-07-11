@@ -9,25 +9,32 @@ use Illuminate\Support\Facades\Log;
 /**
  * WhatsAppService
  *
- * Pengirim WhatsApp via WAHA (WhatsApp HTTP API, self-hosted).
- * Endpoint kirim: POST {base}/api/sendText dengan header X-Api-Key.
- * Kredensial dari config('services.waha').
+ * Pengirim WhatsApp via Wablas (gateway hosted). Endpoint kirim:
+ * POST {url}/api/send-message dengan header Authorization: {token}.{secret}.
+ * Kredensial dari config('services.wablas') / DB settings (bisa diubah dari admin panel).
  */
 class WhatsAppService
 {
     protected string $baseUrl;
-    protected string $apiKey;
-    protected string $session;
+    protected string $token;
+    protected string $secret;
     protected bool $enabled;
 
     public function __construct()
     {
-        // DB settings (editable from the admin panel) take precedence; fall back
-        // to config/.env when a setting hasn't been overridden.
-        $this->baseUrl = rtrim(Setting::read('waha_base_url', config('services.waha.base_url', '')), '/');
-        $this->apiKey = Setting::read('waha_api_key', config('services.waha.api_key', ''));
-        $this->session = Setting::read('waha_session', config('services.waha.session', 'default'));
-        $this->enabled = Setting::readBool('waha_enabled', (bool) config('services.waha.enabled', false));
+        // DB settings (editable dari admin panel) diprioritaskan; fallback ke .env/config.
+        $this->baseUrl = rtrim(Setting::read('wablas_url', config('services.wablas.url', '')), '/');
+        $this->token = Setting::read('wablas_token', config('services.wablas.token', ''));
+        $this->secret = Setting::read('wablas_secret', config('services.wablas.secret', ''));
+        $this->enabled = Setting::readBool('wablas_enabled', (bool) config('services.wablas.enabled', false));
+    }
+
+    /**
+     * Header Authorization Wablas. Secure mode: "token.secret".
+     */
+    protected function authHeader(): string
+    {
+        return $this->secret !== '' ? "{$this->token}.{$this->secret}" : $this->token;
     }
 
     /**
@@ -36,39 +43,38 @@ class WhatsAppService
     public function sendMessage(string $phone, string $message): array
     {
         if (!$this->enabled) {
-            Log::info('WhatsApp (WAHA) disabled. Message not sent.', ['phone' => $phone]);
+            Log::info('WhatsApp (Wablas) disabled. Message not sent.', ['phone' => $phone]);
             return ['status' => 'disabled', 'message' => 'WhatsApp is disabled'];
         }
 
-        if (empty($this->baseUrl) || empty($this->apiKey)) {
-            Log::error('WAHA not configured (base_url/api_key missing)');
+        if (empty($this->baseUrl) || empty($this->token)) {
+            Log::error('Wablas not configured (url/token missing)');
             return ['status' => 'error', 'message' => 'WhatsApp not configured'];
         }
 
-        $chatId = $this->chatId($phone);
+        $to = $this->normalizePhone($phone);
 
         try {
-            $response = Http::withHeaders(['X-Api-Key' => $this->apiKey])
-                ->acceptJson()
-                ->post("{$this->baseUrl}/api/sendText", [
-                    'session' => $this->session,
-                    'chatId' => $chatId,
-                    'text' => $message,
-                    'linkPreview' => true,
+            $response = Http::withHeaders(['Authorization' => $this->authHeader()])
+                ->asForm()
+                ->post("{$this->baseUrl}/api/send-message", [
+                    'phone' => $to,
+                    'message' => $message,
                 ]);
 
             $result = $response->json();
+            $ok = $response->successful() && ($result['status'] ?? false) === true;
 
-            if ($response->successful()) {
-                Log::info('WhatsApp message sent', ['chatId' => $chatId, 'status' => $response->status()]);
-                return ['status' => 'success', 'phone' => $chatId, 'response' => $result];
+            if ($ok) {
+                Log::info('WhatsApp message sent (Wablas)', ['phone' => $to, 'status' => $response->status()]);
+                return ['status' => 'success', 'phone' => $to, 'response' => $result];
             }
 
-            Log::error('WAHA API error', ['chatId' => $chatId, 'status' => $response->status(), 'response' => $result]);
-            return ['status' => 'failed', 'phone' => $chatId, 'response' => $result];
+            Log::error('Wablas API error', ['phone' => $to, 'status' => $response->status(), 'response' => $result]);
+            return ['status' => 'failed', 'phone' => $to, 'response' => $result];
         } catch (\Exception $e) {
-            Log::error('WhatsApp send failed', ['chatId' => $chatId, 'error' => $e->getMessage()]);
-            return ['status' => 'error', 'phone' => $chatId, 'message' => $e->getMessage()];
+            Log::error('WhatsApp send failed (Wablas)', ['phone' => $to, 'error' => $e->getMessage()]);
+            return ['status' => 'error', 'phone' => $to, 'message' => $e->getMessage()];
         }
     }
 
@@ -80,7 +86,7 @@ class WhatsAppService
     public function sendBulkMessages(array $recipients): array
     {
         if (!$this->enabled) {
-            Log::info('WhatsApp (WAHA) disabled. Bulk messages not sent.', ['count' => count($recipients)]);
+            Log::info('WhatsApp (Wablas) disabled. Bulk messages not sent.', ['count' => count($recipients)]);
             return ['status' => 'disabled', 'message' => 'WhatsApp is disabled'];
         }
 
@@ -102,15 +108,7 @@ class WhatsAppService
     }
 
     /**
-     * Ubah nomor menjadi chatId WAHA: 62xxxxxxxxxx@c.us
-     */
-    public function chatId(string $phone): string
-    {
-        return $this->normalizePhone($phone) . '@c.us';
-    }
-
-    /**
-     * Normalisasi nomor ke format internasional tanpa "+" (62xxx).
+     * Normalisasi nomor ke format internasional tanpa "+" (62xxx) — yang dipakai Wablas.
      */
     public function normalizePhone(string $phone): string
     {
@@ -129,154 +127,70 @@ class WhatsAppService
      */
     public function isEnabled(): bool
     {
-        return $this->enabled && !empty($this->baseUrl) && !empty($this->apiKey);
+        return $this->enabled && !empty($this->baseUrl) && !empty($this->token);
     }
 
     // ---------------------------------------------------------------------
-    // Session management (WAHA) — powers the WhatsApp connection settings page.
-    // These proxy WAHA's session endpoints so the frontend never needs the
-    // WAHA base URL / API key directly.
+    // Untuk halaman pengaturan WhatsApp di admin panel.
     // ---------------------------------------------------------------------
 
     /**
-     * Konfigurasi WAHA saat ini (untuk halaman pengaturan; tanpa API key).
+     * Ringkasan konfigurasi (tanpa token/secret).
      */
     public function configSummary(): array
     {
         return [
+            'driver' => 'wablas',
             'enabled' => $this->enabled,
-            'configured' => ! empty($this->baseUrl) && ! empty($this->apiKey),
+            'configured' => !empty($this->baseUrl) && !empty($this->token),
             'base_url' => $this->baseUrl,
-            'session' => $this->session,
         ];
     }
 
-    private function http()
+    /**
+     * URL halaman scan QR Wablas (untuk di-embed di halaman pengaturan).
+     * Wablas memakai token (tanpa secret) pada query param.
+     */
+    public function getScanUrl(): ?string
     {
-        return Http::withHeaders(['X-Api-Key' => $this->apiKey])->timeout(15);
+        if (empty($this->baseUrl) || empty($this->token)) {
+            return null;
+        }
+
+        return "{$this->baseUrl}/api/device/scan?token={$this->token}";
     }
 
     /**
-     * Pastikan WAHA aktif & terkonfigurasi sebelum memanggil API-nya.
-     *
-     * @return array|null  array error bila belum siap, null bila siap.
+     * Status device Wablas (connected/disconnected). Wablas /api/device/info
+     * memakai token pada query param.
      */
-    private function ensureReady(): ?array
+    public function getDeviceStatus(): array
     {
-        if (! $this->enabled) {
-            return ['ok' => false, 'reason' => 'disabled', 'message' => 'WhatsApp (WAHA) dinonaktifkan di server.'];
+        if (!$this->enabled) {
+            return ['ok' => false, 'reason' => 'disabled', 'message' => 'WhatsApp (Wablas) dinonaktifkan.'];
         }
-        if (empty($this->baseUrl) || empty($this->apiKey)) {
-            return ['ok' => false, 'reason' => 'not_configured', 'message' => 'WAHA belum dikonfigurasi (base_url / api_key kosong).'];
-        }
-
-        return null;
-    }
-
-    /**
-     * Info sesi: status koneksi (WORKING/SCAN_QR_CODE/STARTING/STOPPED/FAILED)
-     * dan akun yang sedang terhubung.
-     */
-    public function getSessionInfo(): array
-    {
-        if ($err = $this->ensureReady()) {
-            return $err;
+        if (empty($this->baseUrl) || empty($this->token)) {
+            return ['ok' => false, 'reason' => 'not_configured', 'message' => 'Wablas belum dikonfigurasi (url / token kosong).'];
         }
 
         try {
-            $res = $this->http()->acceptJson()->get("{$this->baseUrl}/api/sessions/{$this->session}");
+            $res = Http::timeout(15)->acceptJson()
+                ->get("{$this->baseUrl}/api/device/info", ['token' => $this->token]);
+            $data = $res->json();
 
-            if ($res->successful()) {
-                $data = $res->json();
+            // Wablas: { status: true, data: { status: "connected"/"disconnected", ... } }
+            $deviceStatus = $data['data']['status'] ?? ($data['status'] ?? null);
+            $connected = is_string($deviceStatus) && strtolower($deviceStatus) === 'connected';
 
-                return [
-                    'ok' => true,
-                    'status' => $data['status'] ?? 'UNKNOWN',
-                    'me' => $data['me'] ?? null,
-                ];
-            }
-
-            // 404 = sesi belum dibuat/dijalankan.
-            return ['ok' => true, 'status' => 'STOPPED', 'me' => null];
+            return [
+                'ok' => (bool) ($data['status'] ?? false),
+                'status' => $deviceStatus,
+                'connected' => $connected,
+                'data' => $data['data'] ?? null,
+            ];
         } catch (\Exception $e) {
-            Log::warning('WAHA session info failed', ['error' => $e->getMessage()]);
-
-            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server WAHA.'];
+            Log::warning('Wablas device info failed', ['error' => $e->getMessage()]);
+            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server Wablas.'];
         }
-    }
-
-    /**
-     * Ambil QR code untuk scan sebagai data URL PNG base64.
-     */
-    public function getQr(): array
-    {
-        if ($err = $this->ensureReady()) {
-            return $err;
-        }
-
-        try {
-            $res = $this->http()
-                ->withHeaders(['Accept' => 'image/png'])
-                ->get("{$this->baseUrl}/api/{$this->session}/auth/qr");
-
-            if (! $res->successful()) {
-                return ['ok' => false, 'reason' => 'no_qr', 'message' => 'QR tidak tersedia (mungkin sudah terhubung atau sesi belum dimulai).'];
-            }
-
-            // Beberapa versi WAHA mengembalikan JSON {value: base64}, sebagian lagi PNG mentah.
-            $contentType = (string) $res->header('Content-Type');
-            if (str_contains($contentType, 'application/json')) {
-                $json = $res->json();
-                $value = $json['value'] ?? $json['qr'] ?? null;
-
-                return ['ok' => (bool) $value, 'qr' => $value ? 'data:image/png;base64,'.$value : null];
-            }
-
-            return ['ok' => true, 'qr' => 'data:image/png;base64,'.base64_encode($res->body())];
-        } catch (\Exception $e) {
-            Log::warning('WAHA QR fetch failed', ['error' => $e->getMessage()]);
-
-            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server WAHA.'];
-        }
-    }
-
-    /**
-     * Jalankan aksi sesi WAHA: start | stop | restart | logout.
-     */
-    private function sessionAction(string $action): array
-    {
-        if ($err = $this->ensureReady()) {
-            return $err;
-        }
-
-        try {
-            $res = $this->http()->acceptJson()->post("{$this->baseUrl}/api/sessions/{$this->session}/{$action}");
-
-            return ['ok' => $res->successful(), 'message' => $res->successful() ? null : 'WAHA menolak permintaan.'];
-        } catch (\Exception $e) {
-            Log::warning("WAHA session {$action} failed", ['error' => $e->getMessage()]);
-
-            return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server WAHA.'];
-        }
-    }
-
-    public function startSession(): array
-    {
-        return $this->sessionAction('start');
-    }
-
-    public function stopSession(): array
-    {
-        return $this->sessionAction('stop');
-    }
-
-    public function restartSession(): array
-    {
-        return $this->sessionAction('restart');
-    }
-
-    public function logoutSession(): array
-    {
-        return $this->sessionAction('logout');
     }
 }

@@ -35,13 +35,15 @@ return [
         ],
     ],
 
-    // WhatsApp via WAHA (WhatsApp HTTP API, self-hosted)
-    'waha' => [
-        'enabled' => env('WAHA_ENABLED', false),
-        'base_url' => env('WAHA_BASE_URL', ''),
-        'api_key' => env('WAHA_API_KEY', ''),
-        'session' => env('WAHA_SESSION', 'default'),
-        'webhook_secret' => env('WAHA_WEBHOOK_SECRET', ''),
+    // WhatsApp via Wablas (hosted WhatsApp gateway)
+    'wablas' => [
+        'enabled' => env('WABLAS_ENABLED', false),
+        'url' => env('WABLAS_URL', ''),           // e.g. https://bdg.wablas.com
+        'token' => env('WABLAS_TOKEN', ''),
+        'secret' => env('WABLAS_SECRET', ''),     // secure mode: Authorization = token.secret
+        // Optional shared secret to validate incoming webhooks (matched against a
+        // `secret` field/query param); leave empty to skip verification.
+        'webhook_secret' => env('WABLAS_WEBHOOK_SECRET', ''),
     ],
 
     'fcm' => [

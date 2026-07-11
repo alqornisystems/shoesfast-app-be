@@ -9,8 +9,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Manajemen koneksi WhatsApp (WAHA) untuk halaman pengaturan di admin panel.
- * Semua endpoint mem-proxy WAHA sehingga frontend tak perlu base URL / API key.
+ * Manajemen koneksi WhatsApp (Wablas) untuk halaman pengaturan di admin panel.
+ * Koneksi (scan QR) dikelola lewat halaman scan Wablas yang di-embed di frontend.
  */
 class WhatsAppController extends Controller
 {
@@ -20,88 +20,66 @@ class WhatsAppController extends Controller
     public function status(): JsonResponse
     {
         $config = $this->wa->configSummary();
-        $info = $this->wa->getSessionInfo();
-        $status = $info['status'] ?? null;
+        $info = $this->wa->getDeviceStatus();
 
         return response()->json(array_merge($config, [
             'ok' => $info['ok'] ?? false,
             'reason' => $info['reason'] ?? null,
             'message' => $info['message'] ?? null,
-            'status' => $status,
-            'connected' => $status === 'WORKING',
-            'needs_scan' => $status === 'SCAN_QR_CODE',
-            'me' => $info['me'] ?? null,
+            'status' => $info['status'] ?? null,
+            'connected' => $info['connected'] ?? false,
         ]));
     }
 
-    // GET /api/whatsapp/qr
+    // GET /api/whatsapp/qr — URL halaman scan Wablas untuk di-embed (iframe).
     public function qr(): JsonResponse
     {
-        return response()->json($this->wa->getQr());
-    }
-
-    // GET /api/whatsapp/settings — current WAHA config (API key never returned).
-    public function settings(): JsonResponse
-    {
-        $config = $this->wa->configSummary();
-        $apiKeySet = ! empty(Setting::read('waha_api_key', config('services.waha.api_key', '')));
+        $url = $this->wa->getScanUrl();
 
         return response()->json([
-            'enabled' => $config['enabled'],
-            'base_url' => $config['base_url'],
-            'session' => $config['session'],
-            'api_key_set' => $apiKeySet,
+            'ok' => (bool) $url,
+            'scan_url' => $url,
+            'message' => $url ? null : 'Wablas belum dikonfigurasi (url / token kosong).',
         ]);
     }
 
-    // PUT /api/whatsapp/settings — persist config to DB (overrides .env).
+    // GET /api/whatsapp/settings — konfigurasi Wablas (token/secret tidak dikembalikan).
+    public function settings(): JsonResponse
+    {
+        $config = $this->wa->configSummary();
+
+        return response()->json([
+            'driver' => 'wablas',
+            'enabled' => $config['enabled'],
+            'base_url' => $config['base_url'],
+            'token_set' => !empty(Setting::read('wablas_token', config('services.wablas.token', ''))),
+            'secret_set' => !empty(Setting::read('wablas_secret', config('services.wablas.secret', ''))),
+        ]);
+    }
+
+    // PUT /api/whatsapp/settings — simpan konfigurasi Wablas ke DB (override .env).
     public function updateSettings(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
             'base_url' => ['nullable', 'string', 'max:255', 'url'],
-            'session' => ['nullable', 'string', 'max:100'],
-            'api_key' => ['nullable', 'string', 'max:255'],
+            'token' => ['nullable', 'string', 'max:255'],
+            'secret' => ['nullable', 'string', 'max:255'],
         ]);
 
-        Setting::write('waha_enabled', $validated['enabled']);
+        Setting::write('wablas_enabled', $validated['enabled']);
 
-        if (! empty($validated['base_url'])) {
-            Setting::write('waha_base_url', rtrim($validated['base_url'], '/'));
+        if (!empty($validated['base_url'])) {
+            Setting::write('wablas_url', rtrim($validated['base_url'], '/'));
         }
-        if (! empty($validated['session'])) {
-            Setting::write('waha_session', $validated['session']);
+        // Hanya timpa token/secret bila diisi — dibiarkan kosong = pakai yang lama.
+        if (!empty($validated['token'])) {
+            Setting::write('wablas_token', $validated['token']);
         }
-        // Only overwrite the API key when a new, non-empty value is provided —
-        // leaving the field blank keeps the existing key.
-        if (! empty($validated['api_key'])) {
-            Setting::write('waha_api_key', $validated['api_key']);
+        if (!empty($validated['secret'])) {
+            Setting::write('wablas_secret', $validated['secret']);
         }
 
         return response()->json(['message' => 'Pengaturan WhatsApp berhasil disimpan.']);
-    }
-
-    // POST /api/whatsapp/start
-    public function start(): JsonResponse
-    {
-        return response()->json($this->wa->startSession());
-    }
-
-    // POST /api/whatsapp/stop
-    public function stop(): JsonResponse
-    {
-        return response()->json($this->wa->stopSession());
-    }
-
-    // POST /api/whatsapp/restart
-    public function restart(): JsonResponse
-    {
-        return response()->json($this->wa->restartSession());
-    }
-
-    // POST /api/whatsapp/logout
-    public function logout(): JsonResponse
-    {
-        return response()->json($this->wa->logoutSession());
     }
 }

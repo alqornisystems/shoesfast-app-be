@@ -31,7 +31,7 @@ Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:6,1');
 });
 
-// WAHA (WhatsApp HTTP API) Webhook (No Authentication Required, diverifikasi HMAC)
+// Wablas incoming-message webhook (publik; opsional diverifikasi WABLAS_WEBHOOK_SECRET)
 Route::post('webhook', [WebhookController::class, 'whatsapp']);
 
 // Protected
@@ -156,16 +156,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{treatmentId}/status', [PartnershipTreatmentController::class, 'updateStatus']);
     });
 
-    // WhatsApp (WAHA) connection management — scan QR & session control
+    // WhatsApp (Wablas) — status, QR scan URL, dan pengaturan kredensial
     Route::prefix('whatsapp')->group(function () {
         Route::get('status', [WhatsAppController::class, 'status']);
         Route::get('qr', [WhatsAppController::class, 'qr']);
         Route::get('settings', [WhatsAppController::class, 'settings']);
         Route::put('settings', [WhatsAppController::class, 'updateSettings']);
-        Route::post('start', [WhatsAppController::class, 'start']);
-        Route::post('stop', [WhatsAppController::class, 'stop']);
-        Route::post('restart', [WhatsAppController::class, 'restart']);
-        Route::post('logout', [WhatsAppController::class, 'logout']);
     });
 
     // Broadcasts (WhatsApp/SMS Broadcasting)
