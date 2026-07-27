@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Send;
 use App\Models\User;
 use App\Services\FcmService;
@@ -748,9 +749,21 @@ class SendController extends Controller
             $kelengkapan[] = ['nama' => $nama, 'ada' => $nilai[$i] ?? false];
         }
 
+        // Kurir yang mengantar perlu tahu masih ada tagihan atau tidak — angka ini satu-satunya
+        // rupiah di endpoint ini, dan rumusnya disalin dari PaymentController.php:77-105 supaya
+        // tidak pernah berselisih dengan layar pembayaran. Harga per item tetap tidak dikirim.
+        $order = $send->order;
+        $totalPaid = $order ? Payment::where('orders_id', $order->id)->sum('nominal') : 0;
+        $totalPrice = $order->total_price ?? 0;
+        $credit = $totalPrice - $totalPaid;
+
         return response()->json([
             'id' => $send->id,
             'type' => $send->type,
+            'total_price' => $totalPrice,
+            'total_paid' => $totalPaid,
+            'credit' => $credit,
+            'payment_status' => $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid'),
             'order_code' => $send->order->code ?? null,
             'customer_name' => $send->order->customer->name ?? null,
             'customer_address' => $send->order->customer->address ?? null,
