@@ -707,4 +707,68 @@ class SendController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * GET /api/sends/{id}/detail
+     * Rincian barang untuk kurir: apa saja yang dikerjakan, riwayatnya, dan kelengkapannya.
+     *
+     * Endpoint tersendiri, BUKAN memakai orders/{id}/items yang admin-only — endpoint itu
+     * membuka seluruh isi pesanan termasuk harga, dan kurir tidak perlu tahu harga untuk
+     * mengantar barang. Di sini sengaja tidak ada satu pun angka rupiah.
+     */
+    public function detail(Request $request, $id)
+    {
+        $send = Send::with([
+            'order.customer',
+            'orderItem.treatments.service',
+            'orderItem.treatments.user' => function ($q) {
+                $q->withoutGlobalScopes();
+            },
+        ])->findOrFail($id);
+
+        // Kurir hanya boleh membuka pengantaran miliknya sendiri.
+        if (! $this->isAdmin($request) && (int) $send->users_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Ini bukan pengiriman Anda.'], 403);
+        }
+
+        $item = $send->orderItem;
+
+        // `checkbox` disimpan sebagai "true, false, ..." sepanjang daftar kelengkapan.
+        // Labelnya ditentukan jenis barang: 1 = Tas (7 item), selain itu Sepatu (3 item).
+        $labelTas = ['Dust Bag', 'Care Card/Card', 'Tali panjang', 'Tali pendek', 'Tag Brand', 'Price tag', 'Receipt'];
+        $labelSepatu = ['Tali Sepatu', 'Kaos Kaki', 'Box Sepatu'];
+        $label = ((int) ($item->type ?? 0)) === 1 ? $labelTas : $labelSepatu;
+
+        $nilai = $item && $item->checkbox
+            ? array_map(fn ($v) => trim($v) === 'true', explode(',', $item->checkbox))
+            : [];
+
+        $kelengkapan = [];
+        foreach ($label as $i => $nama) {
+            $kelengkapan[] = ['nama' => $nama, 'ada' => $nilai[$i] ?? false];
+        }
+
+        return response()->json([
+            'id' => $send->id,
+            'type' => $send->type,
+            'order_code' => $send->order->code ?? null,
+            'customer_name' => $send->order->customer->name ?? null,
+            'customer_address' => $send->order->customer->address ?? null,
+            'item_name' => $item->name ?? null,
+            'item_photo' => $item && $item->photo
+                ? (filter_var($item->photo, FILTER_VALIDATE_URL) ? $item->photo : asset('storage/'.$item->photo))
+                : null,
+            'item_note' => $item->note ?? null,
+            'kelengkapan' => $kelengkapan,
+            'pengerjaan' => $item
+                ? $item->treatments->map(fn ($t) => [
+                    'nama' => $t->service->name ?? null,
+                    'status' => (int) $t->status,
+                    'teknisi' => $t->user->name ?? null,
+                    'mulai' => $t->date_start,
+                    'selesai' => $t->done_at,
+                ])->values()
+                : [],
+        ]);
+    }
 }

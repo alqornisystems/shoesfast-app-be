@@ -127,6 +127,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('sends/available-delivery-items', [SendController::class, 'getAvailableDeliveryItems']);
         Route::get('sends/available-couriers', [SendController::class, 'getAvailableCouriers']);
         Route::post('sends/mark-completed', [SendController::class, 'markAsCompleted']);
+        // Rincian barang untuk kurir: pengerjaan, riwayat, kelengkapan. Tanpa harga.
+        Route::get('sends/{id}/detail', [SendController::class, 'detail']);
         Route::apiResource('sends', SendController::class);
     });
 
