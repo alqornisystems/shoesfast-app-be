@@ -255,12 +255,14 @@ class TreatmentController extends Controller
         $treatment = Treatment::with(['user', 'orderItem.order'])->findOrFail($id);
         $oldStatus = $treatment->status;
 
-        // Teknisi hanya boleh memajukan pekerjaan sampai QC (status 2). Begitu sudah di-QC-kan,
-        // kelanjutannya wewenang admin — teknisi tidak bisa menariknya mundur atau
-        // menyelesaikannya sendiri.
-        if (! $this->isAdmin($request) && (int) $treatment->status >= 2) {
+        // Status: 0 = sedang dikerjakan, 1 = siap QC, 2 = selesai (lolos QC).
+        //
+        // Teknisi hanya boleh mengantar pekerjaan SAMPAI meja QC, yaitu menaikkan 0 -> 1.
+        // Begitu status 1 tercapai, QC Pass/Fail adalah keputusan admin; teknisi tidak boleh
+        // meluluskan pekerjaannya sendiri maupun menariknya mundur ke 0.
+        if (! $this->isAdmin($request) && (int) $treatment->status >= 1) {
             return response()->json([
-                'message' => 'Pekerjaan sudah di-QC-kan. Kelanjutannya hanya bisa dilakukan admin.',
+                'message' => 'Pekerjaan sudah masuk QC. Kelanjutannya hanya bisa dilakukan admin.',
             ], 403);
         }
 
