@@ -130,6 +130,47 @@ class InvoiceShareLinkTest extends TestCase
             ->assertJson(['message' => 'Invoice tidak ditemukan']);
     }
 
+    public function test_public_invoice_returns_410_when_link_expired(): void
+    {
+        $order = $this->seedInvoiceFixture();
+        $order->update(['invoice_expires_at' => time() - 60]);
+
+        // The expired page has to tell the customer who to contact: shop name
+        // and shop number go out, nothing of the customer's own data does.
+        $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(410)
+            ->assertJson(['message' => 'Link invoice sudah kedaluwarsa'])
+            ->assertJsonPath('branch.name', 'Cabang Kemang')
+            ->assertJsonPath('branch.whatsapp', '081277001100')
+            ->assertJsonMissingPath('customer');
+    }
+
+    public function test_public_invoice_410_falls_back_to_branch_phone(): void
+    {
+        $order = $this->seedInvoiceFixture();
+        $order->update(['invoice_expires_at' => time() - 60]);
+
+        // This legacy schema stores "never filled in" as '' at least as often
+        // as NULL, so the fallback has to be ?: and not ??.
+        Project::find(1)->update(['whatsapp' => '']);
+
+        $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(410)
+            ->assertJsonPath('branch.whatsapp', '02177001100');
+    }
+
+    public function test_public_invoice_returns_410_when_expiry_never_set(): void
+    {
+        $order = $this->seedInvoiceFixture();
+        $order->update(['invoice_expires_at' => null]);
+
+        $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(410)
+            ->assertJson(['message' => 'Link invoice sudah kedaluwarsa'])
+            ->assertJsonPath('branch.name', 'Cabang Kemang')
+            ->assertJsonPath('branch.whatsapp', '081277001100');
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
