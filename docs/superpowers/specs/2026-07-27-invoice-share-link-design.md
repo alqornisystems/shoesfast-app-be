@@ -136,7 +136,7 @@ Alur:
   ```json
   {
     "message": "Link invoice sudah kedaluwarsa",
-    "branch": { "name": "Cabang Kemang", "phone": "0812xxxxxxx" }
+    "branch": { "name": "Cabang Kemang", "whatsapp": "0812xxxxxxx" }
   }
   ```
 
@@ -158,7 +158,7 @@ Menyatukan yang sekarang butuh dua panggilan menjadi satu:
   "date": 1785000000,
   "due_date": 1785259200,
   "payment_status": "paid",
-  "branch": { "name": "Cabang Kemang", "phone": "0812xxxxxxx" },
+  "branch": { "name": "Cabang Kemang", "whatsapp": "0812xxxxxxx" },
   "customer": { "name": "Budi Santoso", "phone": "0812…", "email": null, "address": "Jl. …" },
   "items": [
     {
@@ -190,7 +190,7 @@ Catatan isi:
 - `item.price` tetap dikirim dan dipakai frontend sebagai subtotal yang mengikat. Jumlah harga
   treatment bisa berbeda dari `item.price` karena kolom itu bisa diisi manual — yang ditagih
   tetap `item.price`.
-- `branch.phone` dipakai halaman "tautan kedaluwarsa" agar customer tahu harus menghubungi
+- `branch.whatsapp` dipakai halaman "tautan kedaluwarsa" agar customer tahu harus menghubungi
   siapa.
 - `customer` bisa null untuk order walk-in; kirim objek dengan field bernilai null, jangan
   hilangkan kuncinya.
@@ -225,6 +225,21 @@ Ingat: `php` dan `composer` di mesin ini butuh XAMPP di depan `PATH` —
   tambahkan kolom `invoice_revoked_at` dan satu pemeriksaan di endpoint publik.
 - Payload tidak di-cache. Beban kecil karena tautan hanya dibuka customer bersangkutan, dan
   status pembayaran harus selalu mutakhir.
+
+## Langkah rilis — wajib, tidak bisa ditinggal
+
+Deploy proyek ini hanya mengunggah berkas lewat FTP (`.github/workflows/deploy.yml`); tidak ada
+langkah `artisan` sama sekali. Jadi setelah berkas naik, **dua perintah ini harus dijalankan di
+server**, kalau tidak fitur ini mati total:
+
+```bash
+php artisan migrate       # tanpa ini orders.invoice_token belum ada — kedua endpoint balas 500
+php artisan config:clear  # tanpa ini key app.frontend_url tidak terbaca dari config cache
+```
+
+Yang kedua paling menipu: kalau config cache lama masih dipakai, `config('app.frontend_url')`
+mengembalikan `null`, dan endpoint menjawab *"FRONTEND_URL belum dikonfigurasi"* padahal
+`FRONTEND_URL` sudah benar di `.env`. Pesannya menyesatkan orang yang men-debug.
 
 ## Spec lanjutan — putaran 360 derajat
 
