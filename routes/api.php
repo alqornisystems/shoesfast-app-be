@@ -114,7 +114,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('treatments', [TreatmentController::class, 'index']);
         // Teknisi mengajukan diri mengambil pekerjaan; belum jadi miliknya sampai admin setuju.
         Route::post('treatments/claim', [TreatmentController::class, 'claim']);
-        Route::post('treatments/force-complete', [TreatmentController::class, 'forceComplete']);
         Route::put('treatments/{id}/status', [TreatmentController::class, 'updateStatus']);
         Route::put('treatments/{id}/update', [TreatmentController::class, 'update']);
         Route::get('treatments/available-technicians', [TreatmentController::class, 'getAvailableTechnicians']);
@@ -138,6 +137,8 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::middleware('role:Admin Super,Admin')->group(function () {
         Route::post('treatments/assign', [TreatmentController::class, 'assignToUser']);
+        // Selesai paksa melewati QC, jadi bukan wewenang teknisi.
+        Route::post('treatments/force-complete', [TreatmentController::class, 'forceComplete']);
         Route::get('treatments/claims', [TreatmentController::class, 'pendingClaims']);
         Route::put('treatments/claims/{id}/approve', [TreatmentController::class, 'approveClaim']);
         Route::put('treatments/claims/{id}/reject', [TreatmentController::class, 'rejectClaim']);
