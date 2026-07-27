@@ -242,6 +242,38 @@ class InvoiceShareLinkTest extends TestCase
         );
     }
 
+    public function test_public_invoice_survives_missing_relations_without_auth(): void
+    {
+        // Walk-in order: no customer, branch row gone, no items, no payments.
+        $order = Order::create([
+            'projects_id' => 99,
+            'customers_id' => null,
+            'code' => 'INV-2026-002',
+            'date' => strtotime('2026-03-01 09:00:00'),
+            'total_discount' => 0,
+            'total_price' => 50000,
+            'status' => 1,
+            'invoice_token' => str_repeat('b', 40),
+            'invoice_expires_at' => time() + 86400,
+        ]);
+
+        // No Sanctum::actingAs here on purpose: the endpoint must answer without
+        // an Authorization header.
+        $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(200)
+            ->assertJsonPath('branch.name', null)
+            ->assertJsonPath('branch.whatsapp', null)
+            ->assertJsonPath('customer.name', null)
+            ->assertJsonPath('customer.phone', null)
+            ->assertJsonPath('customer.email', null)
+            ->assertJsonPath('customer.address', null)
+            ->assertJsonPath('items', [])
+            ->assertJsonPath('payments', [])
+            ->assertJsonPath('total_paid', 0)
+            ->assertJsonPath('credit', 50000)
+            ->assertJsonPath('payment_status', 'unpaid');
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
