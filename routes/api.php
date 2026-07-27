@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\PartnershipController;
 use App\Http\Controllers\Api\PartnershipTreatmentController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\PublicInvoiceController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SendController;
@@ -33,6 +34,11 @@ Route::prefix('auth')->group(function () {
 
 // Wablas incoming-message webhook (publik; opsional diverifikasi WABLAS_WEBHOOK_SECRET)
 Route::post('webhook', [WebhookController::class, 'whatsapp']);
+
+// Invoice publik (tanpa login) — dibuka customer dari tautan WhatsApp.
+// Throttle supaya token 40 karakter tidak bisa digempur brute force.
+Route::get('public/invoice/{token}', [PublicInvoiceController::class, 'show'])
+    ->middleware('throttle:60,1');
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {

@@ -105,6 +105,31 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertNull(Order::withoutBranchScope()->find($order->id)->invoice_token);
     }
 
+    public function test_public_invoice_returns_invoice_header(): void
+    {
+        $order = $this->seedInvoiceFixture();
+
+        $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(200)
+            ->assertJsonPath('code', 'INV-2026-001')
+            ->assertJsonPath('date', strtotime('2026-03-01 09:00:00'))
+            ->assertJsonPath('branch.name', 'Cabang Kemang')
+            ->assertJsonPath('branch.whatsapp', '081277001100')
+            ->assertJsonPath('customer.name', 'Budi Santoso')
+            ->assertJsonPath('customer.phone', '081200001111')
+            ->assertJsonPath('customer.email', null)
+            ->assertJsonPath('customer.address', 'Jl. Melati 10');
+    }
+
+    public function test_public_invoice_returns_404_for_unknown_token(): void
+    {
+        $this->seedInvoiceFixture();
+
+        $this->getJson('/api/public/invoice/'.str_repeat('z', 40))
+            ->assertStatus(404)
+            ->assertJson(['message' => 'Invoice tidak ditemukan']);
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
