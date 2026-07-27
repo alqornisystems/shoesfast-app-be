@@ -12,6 +12,7 @@ use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
@@ -831,5 +832,27 @@ class OrderController extends Controller
         }
 
         throw new \Exception('Invalid image format');
+    }
+
+    /**
+     * Create or refresh the public invoice share link for an order.
+     *
+     * Branch scope stays ON: a branch admin must not be able to mint a link
+     * for another branch's order.
+     */
+    public function invoiceLink($id)
+    {
+        $order = Order::findOrFail($id);
+
+        $frontendUrl = (string) config('app.frontend_url');
+
+        $order->invoice_token = Str::random(40);
+        $order->invoice_expires_at = time() + 30 * 86400;
+        $order->save();
+
+        return response()->json([
+            'url' => rtrim($frontendUrl, '/').'/invoice/'.$order->invoice_token,
+            'expires_at' => $order->invoice_expires_at,
+        ]);
     }
 }

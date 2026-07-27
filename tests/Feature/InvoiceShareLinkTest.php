@@ -9,8 +9,10 @@ use App\Models\Payment;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\Treatment;
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class InvoiceShareLinkTest extends TestCase
@@ -40,6 +42,32 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertNotSame('', $url);
         $this->assertStringNotContainsString(',', $url);
         $this->assertSame(trim(explode(',', (string) env('FRONTEND_URL', ''))[0]), $url);
+    }
+
+    public function test_invoice_link_endpoint_creates_token_and_url(): void
+    {
+        $order = $this->seedInvoiceFixture();
+        $order->update(['invoice_token' => null, 'invoice_expires_at' => null]);
+
+        Sanctum::actingAs($this->branchAdmin());
+
+        $body = $this->postJson('/api/orders/'.$order->id.'/invoice-link')
+            ->assertStatus(200)
+            ->json();
+
+        $token = Order::withoutBranchScope()->find($order->id)->invoice_token;
+
+        $this->assertSame(40, strlen($token));
+        $this->assertSame(rtrim(config('app.frontend_url'), '/').'/invoice/'.$token, $body['url']);
+        $this->assertEqualsWithDelta(time() + 30 * 86400, $body['expires_at'], 5);
+    }
+
+    private function branchAdmin(int $projectId = 1): User
+    {
+        $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
+        $user->id = 1;
+
+        return $user;
     }
 
     /**

@@ -7,8 +7,8 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExpenseController;
-use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\ExpenseOperationalController;
+use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PartnershipController;
 use App\Http\Controllers\Api\PartnershipTreatmentController;
@@ -69,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('orders/{orderId}/items', [OrderController::class, 'getItems']);
     Route::post('orders/{orderId}/items', [OrderController::class, 'saveItem']);
     Route::delete('orders/{orderId}/items/{itemId}', [OrderController::class, 'removeItem']);
+    Route::post('orders/{id}/invoice-link', [OrderController::class, 'invoiceLink']);
     Route::apiResource('orders', OrderController::class);
 
     // Sends (Delivery & Pickup) - custom routes before apiResource
