@@ -56,6 +56,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | FRONTEND_URL boleh berisi beberapa origin dipisah koma (dipakai CORS).
+    | Untuk merakit tautan (mis. /invoice/<token>) hanya origin pertama yang
+    | dipakai. Disimpan di config, bukan env() di controller, supaya tetap
+    | benar saat config:cache aktif di produksi.
+    |
+    */
+
+    'frontend_url' => trim(explode(',', (string) env('FRONTEND_URL', ''))[0]),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

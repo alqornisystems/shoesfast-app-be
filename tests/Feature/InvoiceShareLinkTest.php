@@ -32,6 +32,16 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertIsInt($fresh->invoice_expires_at);
     }
 
+    public function test_frontend_url_config_is_a_single_origin(): void
+    {
+        $url = config('app.frontend_url');
+
+        $this->assertIsString($url);
+        $this->assertNotSame('', $url);
+        $this->assertStringNotContainsString(',', $url);
+        $this->assertSame(trim(explode(',', (string) env('FRONTEND_URL', ''))[0]), $url);
+    }
+
     /**
      * The legacy tables have no migrations (production is the source of truth),
      * so the sqlite :memory: test DB is built by hand here.
