@@ -846,7 +846,9 @@ class OrderController extends Controller
 
         $frontendUrl = (string) config('app.frontend_url');
 
-        $order->invoice_token = Str::random(40);
+        // Mint once. Customers keep old links in their WhatsApp history, so an
+        // existing token must never change — only the expiry moves forward.
+        $order->invoice_token = $order->invoice_token ?: Str::random(40);
         $order->invoice_expires_at = time() + 30 * 86400;
         $order->save();
 

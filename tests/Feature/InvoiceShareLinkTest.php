@@ -62,6 +62,32 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertEqualsWithDelta(time() + 30 * 86400, $body['expires_at'], 5);
     }
 
+    public function test_invoice_link_keeps_token_and_refreshes_expiry(): void
+    {
+        $order = $this->seedInvoiceFixture();
+
+        Sanctum::actingAs($this->branchAdmin());
+
+        $first = $this->postJson('/api/orders/'.$order->id.'/invoice-link')
+            ->assertStatus(200)
+            ->json();
+
+        // Stale the expiry so a refresh is provable.
+        Order::withoutBranchScope()->where('id', $order->id)->update(['invoice_expires_at' => 111]);
+
+        $second = $this->postJson('/api/orders/'.$order->id.'/invoice-link')
+            ->assertStatus(200)
+            ->json();
+
+        $this->assertSame($first['url'], $second['url']);
+        $this->assertSame(
+            $first['url'],
+            rtrim(config('app.frontend_url'), '/').'/invoice/'.Order::withoutBranchScope()->find($order->id)->invoice_token
+        );
+        $this->assertGreaterThan(111, $second['expires_at']);
+        $this->assertEqualsWithDelta(time() + 30 * 86400, $second['expires_at'], 5);
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
