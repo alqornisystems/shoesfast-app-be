@@ -56,7 +56,9 @@ class RoleAuthorizationTest extends TestCase
 
             'data karyawan' => ['get', '/api/users', ['Admin Super', 'Admin', 'HRD']],
             'jabatan' => ['get', '/api/roles', ['Admin Super', 'Admin', 'HRD']],
-            'setujui izin' => ['put', '/api/absences/1/approve', ['Admin Super', 'Admin', 'HRD']],
+            // Menyetujui izin bukan wewenang HRD — hanya Admin dan Admin Super.
+            'setujui izin' => ['put', '/api/absences/1/approve', ['Admin Super', 'Admin']],
+            'tolak izin' => ['put', '/api/absences/1/reject', ['Admin Super', 'Admin']],
             'laporan absensi' => ['get', '/api/reports/attendance', ['Admin Super', 'Admin', 'HRD']],
 
             'data pelanggan' => ['get', '/api/customers', ['Admin Super', 'Admin', 'Admin Crm', 'Admin Sosmed']],

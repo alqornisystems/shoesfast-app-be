@@ -217,7 +217,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:Admin Super,Admin,HRD')->group(function () {
         Route::apiResource('users', UserController::class);
         Route::apiResource('roles', RoleController::class);
+    });
 
+    // Persetujuan izin — HANYA Admin dan Admin Super. HRD boleh mengelola data karyawan dan
+    // melihat pengajuannya, tapi memutuskan disetujui atau ditolak bukan wewenangnya.
+    // Tombol Setujui/Tolak di halaman /izin memakai daftar yang sama; kalau salah satu diubah,
+    // yang lain harus ikut, kalau tidak tombolnya tampil lalu ditolak 403.
+    Route::middleware('role:Admin Super,Admin')->group(function () {
         Route::put('absences/{id}/approve', [AttendanceController::class, 'approveAbsence']);
         Route::put('absences/{id}/reject', [AttendanceController::class, 'rejectAbsence']);
     });
