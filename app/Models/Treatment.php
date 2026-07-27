@@ -16,9 +16,6 @@ class Treatment extends Model
     protected $fillable = [
         'projects_id',
         'users_id',
-        'claim_users_id',
-        'claim_status',
-        'claim_at',
         'partnerships_id',
         'orders_items_id',
         'services_id',
@@ -36,9 +33,6 @@ class Treatment extends Model
 
     protected $casts = [
         'status' => 'integer',
-        'claim_users_id' => 'integer',
-        'claim_status' => 'integer',
-        'claim_at' => 'integer',
         'date_start' => 'integer',
         'date_end' => 'integer',
         'price' => 'integer',
@@ -108,14 +102,5 @@ class Treatment extends Model
     public function warranty()
     {
         return $this->hasOne(Warranty::class, 'treatments_id');
-    }
-
-    /**
-     * Pengaju pekerjaan (menunggu persetujuan admin). Terpisah dari user() yang berarti
-     * pemilik resmi.
-     */
-    public function claimUser()
-    {
-        return $this->belongsTo(User::class, 'claim_users_id');
     }
 }

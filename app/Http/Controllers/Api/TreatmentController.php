@@ -451,11 +451,11 @@ class TreatmentController extends Controller
 
     /**
      * POST /api/treatments/claim
-     * Teknisi mengajukan diri mengambil pekerjaan dari waiting list.
+     * Teknisi/kurir mengambil pekerjaan dari waiting list — langsung jadi miliknya.
      *
-     * Pengajuan TIDAK langsung mengisi users_id — pekerjaan baru resmi jadi miliknya setelah
-     * admin menyetujui. Selama menunggu, pekerjaan tetap terhitung belum berpemilik, jadi
-     * admin masih bisa menugaskannya ke orang lain kalau memang perlu.
+     * Tanpa persetujuan admin: alur di lapangan menuntut cepat, dan menahan pekerjaan di
+     * ruang tunggu hanya menambah satu orang yang harus menekan tombol sebelum ada yang
+     * mulai bekerja. Pekerjaan yang sudah dipegang orang lain tetap tidak bisa diambil.
      */
     public function claim(Request $request)
     {
@@ -465,121 +465,38 @@ class TreatmentController extends Controller
         ]);
 
         $user = $request->user();
-
-        $treatments = Treatment::whereIn('id', $validated['treatment_ids'])->get();
-
+        $diambil = 0;
         $ditolak = [];
-        $diajukan = 0;
 
         DB::beginTransaction();
         try {
-            foreach ($treatments as $treatment) {
-                // Sudah resmi dipegang orang, atau dikerjakan mitra: tidak bisa diajukan.
+            foreach (Treatment::whereIn('id', $validated['treatment_ids'])->get() as $treatment) {
+                // Sudah dipegang orang atau dikerjakan mitra: lewati, jangan rebut.
                 if ($treatment->users_id !== null || $treatment->partnerships_id !== null) {
                     $ditolak[] = $treatment->id;
 
                     continue;
                 }
 
-                // Sudah ada yang mengajukan dan masih menunggu keputusan admin.
-                if ((int) $treatment->claim_status === 1 && (int) $treatment->claim_users_id !== (int) $user->id) {
-                    $ditolak[] = $treatment->id;
-
-                    continue;
-                }
-
-                $treatment->claim_users_id = $user->id;
-                $treatment->claim_status = 1; // menunggu
-                $treatment->claim_at = time();
+                $treatment->users_id = $user->id;
                 $treatment->modified_by = $user->id;
                 $treatment->save();
-                $diajukan++;
+                $diambil++;
             }
 
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
 
-            return response()->json(['message' => 'Gagal mengajukan pekerjaan.'], 500);
+            return response()->json(['message' => 'Gagal mengambil pekerjaan.'], 500);
         }
 
         return response()->json([
-            'message' => $diajukan > 0
-                ? "Pengajuan terkirim untuk {$diajukan} pekerjaan. Menunggu persetujuan admin."
-                : 'Tidak ada pekerjaan yang bisa diajukan.',
-            'diajukan' => $diajukan,
+            'message' => $diambil > 0
+                ? "{$diambil} pekerjaan berhasil diambil."
+                : 'Pekerjaan sudah diambil orang lain.',
+            'diambil' => $diambil,
             'ditolak' => $ditolak,
         ]);
-    }
-
-    /**
-     * GET /api/treatments/claims
-     * Daftar pengajuan yang menunggu keputusan admin.
-     */
-    public function pendingClaims(Request $request)
-    {
-        $claims = Treatment::with(['service', 'orderItem.order.customer', 'claimUser'])
-            ->where('claim_status', 1)
-            ->whereNull('users_id')
-            ->orderBy('claim_at', 'ASC')
-            ->get()
-            ->map(function ($t) {
-                return [
-                    'id' => $t->id,
-                    'service_name' => $t->service->name ?? null,
-                    'item_name' => $t->orderItem->name ?? null,
-                    'order_code' => $t->orderItem->order->code ?? null,
-                    'customer_name' => $t->orderItem->order->customer->name ?? null,
-                    'claim_users_id' => $t->claim_users_id,
-                    'claim_user_name' => $t->claimUser->name ?? null,
-                    'claim_at' => $t->claim_at,
-                ];
-            });
-
-        return response()->json(['data' => $claims]);
-    }
-
-    /**
-     * PUT /api/treatments/claims/{id}/approve
-     * Admin menyetujui: pengajuan berubah jadi kepemilikan resmi.
-     */
-    public function approveClaim(Request $request, $id)
-    {
-        $treatment = Treatment::findOrFail($id);
-
-        if ((int) $treatment->claim_status !== 1 || $treatment->claim_users_id === null) {
-            return response()->json(['message' => 'Tidak ada pengajuan yang menunggu untuk pekerjaan ini.'], 422);
-        }
-
-        if ($treatment->users_id !== null) {
-            return response()->json(['message' => 'Pekerjaan ini sudah dipegang orang lain.'], 422);
-        }
-
-        $treatment->users_id = $treatment->claim_users_id;
-        $treatment->claim_status = 2; // disetujui
-        $treatment->modified_by = $request->user()->id;
-        $treatment->save();
-
-        return response()->json(['message' => 'Pengajuan disetujui.']);
-    }
-
-    /**
-     * PUT /api/treatments/claims/{id}/reject
-     * Admin menolak: pekerjaan kembali ke waiting list tanpa pemilik.
-     */
-    public function rejectClaim(Request $request, $id)
-    {
-        $treatment = Treatment::findOrFail($id);
-
-        if ((int) $treatment->claim_status !== 1) {
-            return response()->json(['message' => 'Tidak ada pengajuan yang menunggu untuk pekerjaan ini.'], 422);
-        }
-
-        $treatment->claim_status = 3; // ditolak
-        $treatment->claim_users_id = null;
-        $treatment->modified_by = $request->user()->id;
-        $treatment->save();
-
-        return response()->json(['message' => 'Pengajuan ditolak.']);
     }
 }
