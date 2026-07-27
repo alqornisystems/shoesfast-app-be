@@ -17,7 +17,7 @@ class PublicInvoiceController extends Controller
     public function show($token)
     {
         $order = Order::withoutBranchScope()
-            ->with(['customer', 'project'])
+            ->with(['customer', 'project', 'items.treatments.service'])
             ->where('invoice_token', $token)
             ->first();
 
@@ -43,6 +43,31 @@ class PublicInvoiceController extends Controller
             ], 410);
         }
 
+        // Same path -> URL rule as OrderController::show (OrderController.php:123-137).
+        $items = $order->items->map(function ($item) {
+            $photoUrl = null;
+            if ($item->photo) {
+                if (filter_var($item->photo, FILTER_VALIDATE_URL)) {
+                    $photoUrl = $item->photo;
+                } else {
+                    $photoUrl = asset('storage/'.$item->photo);
+                }
+            }
+
+            return [
+                'name' => $item->name,
+                'photo' => $photoUrl,
+                'price' => $item->price,
+                'discount' => $item->discount,
+                'treatments' => $item->treatments->map(function ($treatment) {
+                    return [
+                        'name' => $treatment->service ? $treatment->service->name : null,
+                        'price' => $treatment->price,
+                    ];
+                })->values(),
+            ];
+        })->values();
+
         return response()->json([
             'code' => $order->code,
             'date' => $order->date,
@@ -53,6 +78,7 @@ class PublicInvoiceController extends Controller
                 'email' => $order->customer->email,
                 'address' => $order->customer->address,
             ],
+            'items' => $items,
         ]);
     }
 }

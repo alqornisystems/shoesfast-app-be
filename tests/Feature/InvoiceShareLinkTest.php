@@ -171,6 +171,46 @@ class InvoiceShareLinkTest extends TestCase
             ->assertJsonPath('branch.whatsapp', '081277001100');
     }
 
+    public function test_public_invoice_returns_items_with_treatments_and_photo_url(): void
+    {
+        $order = $this->seedInvoiceFixture();
+
+        // Second item: photo already stored as an absolute URL, must pass through.
+        OrderItem::create([
+            'projects_id' => 1,
+            'orders_id' => $order->id,
+            'services_id' => 2,
+            'photo' => 'https://cdn.example.com/sepatu.jpg',
+            'name' => 'Adidas Samba',
+            'price' => 80000,
+            'discount' => 5000,
+            'status' => 1,
+            'type' => 0,
+        ]);
+
+        $body = $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(200)
+            ->json();
+
+        $this->assertCount(2, $body['items']);
+
+        $this->assertSame('Nike Air Force 1', $body['items'][0]['name']);
+        $this->assertSame(195000, $body['items'][0]['price']);
+        $this->assertSame(0, $body['items'][0]['discount']);
+        $this->assertStringStartsWith('http', $body['items'][0]['photo']);
+        $this->assertStringEndsWith('/storage/items/item-12-1.jpg', $body['items'][0]['photo']);
+        $this->assertSame(
+            [
+                ['name' => 'Deep Clean', 'price' => 75000],
+                ['name' => 'Unyellowing', 'price' => 120000],
+            ],
+            $body['items'][0]['treatments']
+        );
+
+        $this->assertSame('https://cdn.example.com/sepatu.jpg', $body['items'][1]['photo']);
+        $this->assertSame([], $body['items'][1]['treatments']);
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
