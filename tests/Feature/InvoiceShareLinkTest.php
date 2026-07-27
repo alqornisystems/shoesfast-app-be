@@ -211,6 +211,37 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertSame([], $body['items'][1]['treatments']);
     }
 
+    public function test_public_invoice_money_matches_payment_controller(): void
+    {
+        $order = $this->seedInvoiceFixture();
+
+        $public = $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(200)
+            ->json();
+
+        Sanctum::actingAs($this->branchAdmin());
+
+        $row = collect($this->getJson('/api/payments')->assertStatus(200)->json('data'))
+            ->firstWhere('code', 'INV-2026-001');
+
+        $this->assertSame($row['due_date'], $public['due_date']);
+        $this->assertSame($row['total_price'], $public['total_price']);
+        $this->assertSame($row['total_paid'], $public['total_paid']);
+        $this->assertSame($row['credit'], $public['credit']);
+        $this->assertSame($row['payment_status'], $public['payment_status']);
+
+        $this->assertSame(strtotime('2026-03-04 00:00:00'), $public['due_date']);
+        $this->assertSame(195000, $public['total_price']);
+        $this->assertSame(150000, $public['total_paid']);
+        $this->assertSame(45000, $public['credit']);
+        $this->assertSame('partial', $public['payment_status']);
+
+        $this->assertSame(
+            [['date' => strtotime('2026-03-02 10:00:00'), 'nominal' => 150000, 'note' => 'Transfer BCA']],
+            $public['payments']
+        );
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);

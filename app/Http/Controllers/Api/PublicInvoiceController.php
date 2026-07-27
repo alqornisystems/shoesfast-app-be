@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\Payment;
 
 class PublicInvoiceController extends Controller
 {
@@ -17,7 +18,9 @@ class PublicInvoiceController extends Controller
     public function show($token)
     {
         $order = Order::withoutBranchScope()
-            ->with(['customer', 'project', 'items.treatments.service'])
+            ->with(['customer', 'project', 'items.treatments.service', 'payments' => function ($q) {
+                $q->orderBy('date');
+            }])
             ->where('invoice_token', $token)
             ->first();
 
@@ -68,9 +71,18 @@ class PublicInvoiceController extends Controller
             ];
         })->values();
 
+        // Copied verbatim from PaymentController::index (PaymentController.php:77-105)
+        // so the public invoice and the payments page can never disagree.
+        $dueDate = strtotime(date('Y-m-d', strtotime(date('Y-m-d', $order->date).' +3 days')));
+        $totalPaid = Payment::where('orders_id', $order->id)->sum('nominal');
+        $credit = $order->total_price - $totalPaid;
+        $paymentStatus = $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid');
+
         return response()->json([
             'code' => $order->code,
             'date' => $order->date,
+            'due_date' => $dueDate,
+            'payment_status' => $paymentStatus,
             'branch' => $branch,
             'customer' => [
                 'name' => $order->customer->name,
@@ -79,6 +91,16 @@ class PublicInvoiceController extends Controller
                 'address' => $order->customer->address,
             ],
             'items' => $items,
+            'total_price' => $order->total_price,
+            'total_paid' => $totalPaid,
+            'credit' => $credit,
+            'payments' => $order->payments->map(function ($payment) {
+                return [
+                    'date' => $payment->date,
+                    'nominal' => $payment->nominal,
+                    'note' => $payment->note,
+                ];
+            })->values(),
         ]);
     }
 }
