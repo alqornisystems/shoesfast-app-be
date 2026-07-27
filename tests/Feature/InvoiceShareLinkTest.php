@@ -41,7 +41,7 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertIsString($url);
         $this->assertNotSame('', $url);
         $this->assertStringNotContainsString(',', $url);
-        $this->assertSame(trim(explode(',', (string) env('FRONTEND_URL', ''))[0]), $url);
+        $this->assertSame('https://app.example.test', $url);
     }
 
     public function test_invoice_link_endpoint_creates_token_and_url(): void
@@ -240,6 +240,23 @@ class InvoiceShareLinkTest extends TestCase
             [['date' => strtotime('2026-03-02 10:00:00'), 'nominal' => 150000, 'note' => 'Transfer BCA']],
             $public['payments']
         );
+
+        // Top up to the full total_price and confirm the 'paid' arm, which the
+        // strict $credit === 0 comparison gates and no other test reaches.
+        Payment::create([
+            'projects_id' => 1,
+            'orders_id' => $order->id,
+            'date' => strtotime('2026-03-05 10:00:00'),
+            'nominal' => 45000,
+            'note' => 'Pelunasan tunai',
+        ]);
+
+        $paid = $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(200)
+            ->json();
+
+        $this->assertSame(0, $paid['credit']);
+        $this->assertSame('paid', $paid['payment_status']);
     }
 
     public function test_public_invoice_survives_missing_relations_without_auth(): void
@@ -272,6 +289,51 @@ class InvoiceShareLinkTest extends TestCase
             ->assertJsonPath('total_paid', 0)
             ->assertJsonPath('credit', 50000)
             ->assertJsonPath('payment_status', 'unpaid');
+    }
+
+    public function test_public_invoice_reaches_order_from_any_branch(): void
+    {
+        // Fixture order lives under projects_id = 1. An authenticated admin from
+        // a different branch hitting this route must still see the real invoice
+        // -- proves show() drops branch scope on every query, not just the order
+        // lookup. Deleting any of those withoutBranchScope() calls turns this
+        // green test red.
+        $order = $this->seedInvoiceFixture();
+
+        Project::create([
+            'name' => 'Cabang Cilandak',
+            'phone' => '02177002200',
+            'whatsapp' => '081277002200',
+        ]);
+
+        Sanctum::actingAs($this->branchAdmin(2));
+
+        $body = $this->getJson('/api/public/invoice/'.$order->invoice_token)
+            ->assertStatus(200)
+            ->json();
+
+        $this->assertNotEmpty($body['items']);
+        $this->assertNotEmpty($body['payments']);
+        $this->assertSame(150000, $body['total_paid']);
+    }
+
+    public function test_invoice_link_returns_404_for_other_branch_order(): void
+    {
+        // Mirror of the test above: OrderController::invoiceLink must keep its
+        // branch scope ON. A branch-2 admin has no business minting a link for
+        // a branch-1 order.
+        $order = $this->seedInvoiceFixture();
+
+        Project::create([
+            'name' => 'Cabang Cilandak',
+            'phone' => '02177002200',
+            'whatsapp' => '081277002200',
+        ]);
+
+        Sanctum::actingAs($this->branchAdmin(2));
+
+        $this->postJson('/api/orders/'.$order->id.'/invoice-link')
+            ->assertStatus(404);
     }
 
     private function branchAdmin(int $projectId = 1): User

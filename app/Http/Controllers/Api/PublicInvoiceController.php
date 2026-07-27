@@ -18,9 +18,20 @@ class PublicInvoiceController extends Controller
     public function show($token)
     {
         $order = Order::withoutBranchScope()
-            ->with(['customer', 'project', 'items.treatments.service', 'payments' => function ($q) {
-                $q->orderBy('date');
-            }])
+            ->with([
+                'customer',
+                'project',
+                'items' => function ($q) {
+                    $q->withoutBranchScope();
+                },
+                'items.treatments' => function ($q) {
+                    $q->withoutBranchScope();
+                },
+                'items.treatments.service',
+                'payments' => function ($q) {
+                    $q->withoutBranchScope()->orderBy('date');
+                },
+            ])
             ->where('invoice_token', $token)
             ->first();
 
@@ -74,7 +85,7 @@ class PublicInvoiceController extends Controller
         // Copied verbatim from PaymentController::index (PaymentController.php:77-105)
         // so the public invoice and the payments page can never disagree.
         $dueDate = strtotime(date('Y-m-d', strtotime(date('Y-m-d', $order->date).' +3 days')));
-        $totalPaid = Payment::where('orders_id', $order->id)->sum('nominal');
+        $totalPaid = Payment::withoutBranchScope()->where('orders_id', $order->id)->sum('nominal');
         $credit = $order->total_price - $totalPaid;
         $paymentStatus = $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid');
 
