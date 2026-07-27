@@ -37,7 +37,10 @@ class DailyNoteController extends Controller
 
         // Always show current user's data by default
         // Only show other user's data if explicitly requested via user_id parameter
-        if ($request->has('user_id')) {
+        // Hanya admin yang boleh membaca catatan orang lain lewat ?user_id=. Untuk non-admin
+        // parameter itu diabaikan, kalau tidak catatan harian siapa pun bisa dibaca hanya
+        // dengan menebak sebuah id.
+        if ($this->isAdmin($request) && $request->has('user_id')) {
             $query->where('users_id', $request->input('user_id'));
         } else {
             $query->where('users_id', $user->id);

@@ -32,6 +32,13 @@ class TreatmentController extends Controller
                 $q->where('status', '!=', 3); // Not cancelled
             });
 
+        // Staf lapangan hanya melihat pekerjaannya sendiri; admin melihat semuanya.
+        // Daftar waiting list dikecualikan — isinya justru pekerjaan yang BELUM punya pemilik,
+        // dan dari situlah teknisi/kurir mengambil pekerjaan untuk dirinya.
+        if (! $this->isAdmin($request) && ($request->input('page_type') ?? $request->input('page', 'waiting_list')) !== 'waiting_list') {
+            $query->where('users_id', $request->user()->id);
+        }
+
         // Filter by page type (accept both 'page' and 'page_type' parameters)
         $page = $request->input('page_type') ?? $request->input('page', 'waiting_list');
 

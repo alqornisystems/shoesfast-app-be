@@ -158,6 +158,13 @@ class SendController extends Controller
             'status' => 'nullable|integer|in:0,1',
         ]);
 
+        // Kurir tidak boleh menugaskan orang lain: apa pun users_id yang dikirim klien
+        // ditimpa dengan dirinya sendiri. Select yang ter-disable di layar hanya petunjuk;
+        // ini pagarnya. Admin tetap bebas memilih siapa pun.
+        if (! $this->isAdmin($request)) {
+            $validated['users_id'] = $request->user()->id;
+        }
+
         // Validate based on type
         if ($validated['type'] == 0 && ! $validated['orders_id']) {
             return response()->json([
@@ -282,6 +289,11 @@ class SendController extends Controller
             'date' => 'sometimes|date',
             'status' => 'sometimes|integer|in:0,1',
         ]);
+
+        // Sama seperti store: kurir tidak boleh memindahkan tugas ke orang lain.
+        if (! $this->isAdmin($request)) {
+            $validated['users_id'] = $request->user()->id;
+        }
 
         DB::beginTransaction();
         try {
@@ -529,6 +541,11 @@ class SendController extends Controller
             ->where('status', 0) // In progress only
             ->orderBy('date', 'DESC');
 
+        // Kurir hanya melihat pengantaran miliknya sendiri; admin melihat semuanya.
+        if (! $this->isAdmin($request)) {
+            $query->where('users_id', $request->user()->id);
+        }
+
         // Filter by type if provided
         if ($request->has('type') && $request->type !== null) {
             $query->where('type', $request->type);
@@ -583,6 +600,11 @@ class SendController extends Controller
         ])
             ->where('status', 1) // Completed only
             ->orderBy('date', 'DESC');
+
+        // Kurir hanya melihat pengantaran miliknya sendiri; admin melihat semuanya.
+        if (! $this->isAdmin($request)) {
+            $query->where('users_id', $request->user()->id);
+        }
 
         // Filter by type if provided
         if ($request->has('type') && $request->type !== null) {
