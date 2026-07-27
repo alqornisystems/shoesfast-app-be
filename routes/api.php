@@ -26,6 +26,21 @@ use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsAppController;
 use Illuminate\Support\Facades\Route;
 
+/*
+|--------------------------------------------------------------------------
+| Otorisasi per jabatan
+|--------------------------------------------------------------------------
+| Menyembunyikan menu di sidebar tidak menahan siapa pun: sebelum ini seorang
+| teknisi cukup mengetik /laporan-laba-rugi di address bar dan API tetap
+| menyajikan datanya. Middleware `role:` di bawah adalah pagarnya yang
+| sebenarnya, dan daftarnya sengaja dibuat cermin dari navGroups di
+| shoesfast-app-fe/src/components/app-sidebar.tsx — kalau salah satu berubah,
+| yang lain harus ikut, kalau tidak menu tampil tapi datanya 403.
+|
+| 'Admin Super' tidak punya bypass otomatis; ia disebut di tiap daftar. Nama
+| role yang dipakai persis isi tabel `roles`: Admin Super, Admin, Teknisi,
+| Kurir, HRD, Finance, Admin Sosmed, Admin Crm.
+*/
 // Public Routes (No Authentication Required)
 Route::prefix('auth')->group(function () {
     // Rate-limit: maks 6 percobaan login per menit per IP
@@ -42,6 +57,14 @@ Route::get('public/invoice/{token}', [PublicInvoiceController::class, 'show'])
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {
+
+    /*
+    |----------------------------------------------------------------------
+    | Terbuka untuk SEMUA jabatan
+    |----------------------------------------------------------------------
+    | Akun sendiri, dashboard, dan tiga urusan kepegawaian yang dipunyai
+    | setiap karyawan apa pun jabatannya: absen, izin, catatan harian.
+    */
     Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('refresh', [AuthController::class, 'refresh']);
@@ -53,141 +76,214 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('dashboard', [DashboardController::class, 'index']);
 
-    Route::apiResource('roles', RoleController::class);
-    Route::apiResource('users', UserController::class);
-    Route::apiResource('projects', ProjectController::class);
-    Route::apiResource('customers', CustomerController::class);
-    Route::apiResource('services', ServiceController::class);
-
-    // Service HPP
-    Route::prefix('services/{serviceId}/hpp')->group(function () {
-        Route::get('/', [ServiceHppController::class, 'index']);
-        Route::post('/', [ServiceHppController::class, 'store']);
-        Route::post('/batch', [ServiceHppController::class, 'batchSave']);
-        Route::put('/{id}', [ServiceHppController::class, 'update']);
-        Route::delete('/{id}', [ServiceHppController::class, 'destroy']);
-    });
-
-    // Orders - custom routes before apiResource
-    Route::get('orders/search/customers', [OrderController::class, 'searchCustomers']);
-    Route::get('orders/search/services', [OrderController::class, 'searchServices']);
-    Route::get('orders/available-pickup', [OrderController::class, 'getAvailablePickupOrders']);
-    Route::get('orders/{orderId}/items', [OrderController::class, 'getItems']);
-    Route::post('orders/{orderId}/items', [OrderController::class, 'saveItem']);
-    Route::delete('orders/{orderId}/items/{itemId}', [OrderController::class, 'removeItem']);
-    Route::post('orders/{id}/invoice-link', [OrderController::class, 'invoiceLink']);
-    Route::apiResource('orders', OrderController::class);
-
-    // Sends (Delivery & Pickup) - custom routes before apiResource
-    Route::get('sends/pickup-waiting-list', [SendController::class, 'pickupWaitingList']);
-    Route::get('sends/delivery-waiting-list', [SendController::class, 'deliveryWaitingList']);
-    Route::get('sends/in-progress', [SendController::class, 'inProgress']);
-    Route::get('sends/history', [SendController::class, 'history']);
-    Route::get('sends/available-pickup-orders', [SendController::class, 'getAvailablePickupOrders']);
-    Route::get('sends/available-delivery-items', [SendController::class, 'getAvailableDeliveryItems']);
-    Route::get('sends/available-couriers', [SendController::class, 'getAvailableCouriers']);
-    Route::post('sends/mark-completed', [SendController::class, 'markAsCompleted']);
-    Route::apiResource('sends', SendController::class);
-
-    // Treatments (Waiting List & Work Progress)
-    Route::get('treatments', [TreatmentController::class, 'index']);
-    Route::post('treatments/assign', [TreatmentController::class, 'assignToUser']);
-    Route::post('treatments/force-complete', [TreatmentController::class, 'forceComplete']);
-    Route::put('treatments/{id}/status', [TreatmentController::class, 'updateStatus']);
-    Route::put('treatments/{id}/update', [TreatmentController::class, 'update']);
-    Route::get('treatments/available-technicians', [TreatmentController::class, 'getAvailableTechnicians']);
-
-    // Payments
-    Route::get('payments', [PaymentController::class, 'index']);
-    Route::post('payments', [PaymentController::class, 'store']);
-    Route::get('payments/order/{orderId}', [PaymentController::class, 'getByOrder']);
-    Route::get('payments/unpaid-orders', [PaymentController::class, 'getUnpaidOrders']);
-    Route::delete('payments/{id}', [PaymentController::class, 'destroy']);
-
-    // Expenses
-    Route::apiResource('expenses', ExpenseController::class);
-    Route::apiResource('expense-operationals', ExpenseOperationalController::class);
-
-    // Reports
-    Route::prefix('reports')->group(function () {
-        Route::get('sales', [ReportController::class, 'sales']);
-        Route::get('payments', [ReportController::class, 'payments']);
-        Route::get('receivables', [ReportController::class, 'receivables']);
-        Route::get('orders', [ReportController::class, 'orders']);
-        Route::get('expenses', [ReportController::class, 'expenses']);
-        Route::get('hpp', [ReportController::class, 'hpp']);
-        Route::get('profit-loss', [ReportController::class, 'profitLoss']);
-        Route::get('cash-flow', [ReportController::class, 'cashFlow']);
-        Route::get('treatments', [ReportController::class, 'treatments']);
-        Route::get('customers', [ReportController::class, 'customers']);
-        Route::get('top-services', [ReportController::class, 'topServices']);
-        Route::get('google-ads', [ReportController::class, 'googleAds']);
-        Route::get('meta-ads', [ReportController::class, 'metaAds']);
-        Route::get('attendance', [ReportController::class, 'attendance']);
-        Route::get('daily-notes', [ReportController::class, 'dailyNotes']);
-        Route::get('daily-notes-matrix', [ReportController::class, 'dailyNotesMatrix']);
-        Route::get('performance', [ReportController::class, 'performance']);
-    });
-
-    // Attendance
+    // Absensi
     Route::get('attendances/today', [AttendanceController::class, 'today']);
     Route::post('attendances/clock-in', [AttendanceController::class, 'clockIn']);
     Route::post('attendances/clock-out', [AttendanceController::class, 'clockOut']);
     Route::get('attendances', [AttendanceController::class, 'index']);
 
-    // Absence Requests
+    // Pengajuan izin — mengajukan dan membatalkan milik sendiri terbuka untuk semua;
+    // menyetujui/menolak adalah wewenang atasan, dikunci di blok SDM di bawah.
     Route::get('absences', [AttendanceController::class, 'absences']);
     Route::post('absences', [AttendanceController::class, 'storeAbsence']);
-    Route::put('absences/{id}/approve', [AttendanceController::class, 'approveAbsence']);
-    Route::put('absences/{id}/reject', [AttendanceController::class, 'rejectAbsence']);
     Route::delete('absences/{id}', [AttendanceController::class, 'deleteAbsence']);
 
-    // Daily Notes (Catatan Harian)
+    // Catatan harian
     Route::get('daily-notes/available-users', [DailyNoteController::class, 'availableUsers']);
     Route::get('daily-notes/search-users', [DailyNoteController::class, 'searchUsers']);
     Route::get('daily-notes/today', [DailyNoteController::class, 'today']);
     Route::put('daily-notes/{id}/toggle-status', [DailyNoteController::class, 'toggleStatus']);
     Route::apiResource('daily-notes', DailyNoteController::class);
 
-    // Holidays (Master Kalender Libur)
-    Route::apiResource('holidays', HolidayController::class);
+    // Dibaca oleh halaman absensi, izin, dan catatan harian (kalender libur & titik cabang).
+    // Hanya baca; yang menulis ada di blok Pengaturan Perusahaan.
+    Route::get('holidays', [HolidayController::class, 'index']);
+    Route::get('holidays/{holiday}', [HolidayController::class, 'show']);
+    Route::get('projects', [ProjectController::class, 'index']);
+    Route::get('projects/{project}', [ProjectController::class, 'show']);
 
-    // Partnerships (Mitra Kerja)
-    Route::apiResource('partnerships', PartnershipController::class);
+    /*
+    |----------------------------------------------------------------------
+    | Operasional lapangan — Teknisi & Kurir
+    |----------------------------------------------------------------------
+    | Teknisi di lapangan juga merangkap mengantar, jadi keduanya memakai
+    | Pengerjaan maupun Pengiriman. `treatments/assign` tidak ada di sini:
+    | membagi pekerjaan adalah wewenang admin (menu Waiting List).
+    */
+    Route::middleware('role:Admin Super,Admin,Teknisi,Kurir')->group(function () {
+        Route::get('treatments', [TreatmentController::class, 'index']);
+        Route::post('treatments/force-complete', [TreatmentController::class, 'forceComplete']);
+        Route::put('treatments/{id}/status', [TreatmentController::class, 'updateStatus']);
+        Route::put('treatments/{id}/update', [TreatmentController::class, 'update']);
+        Route::get('treatments/available-technicians', [TreatmentController::class, 'getAvailableTechnicians']);
 
-    // Partnership Treatments (Pengerjaan Mitra) - custom routes for partnerships to manage their treatments
-    Route::prefix('partnerships/{partnershipId}/treatments')->group(function () {
-        Route::get('/', [PartnershipTreatmentController::class, 'myTreatments']);
-        Route::get('/statistics', [PartnershipTreatmentController::class, 'statistics']);
-        Route::get('/{treatmentId}', [PartnershipTreatmentController::class, 'show']);
-        Route::put('/{treatmentId}/status', [PartnershipTreatmentController::class, 'updateStatus']);
+        // Sends (Delivery & Pickup) - custom routes before apiResource
+        Route::get('sends/pickup-waiting-list', [SendController::class, 'pickupWaitingList']);
+        Route::get('sends/delivery-waiting-list', [SendController::class, 'deliveryWaitingList']);
+        Route::get('sends/in-progress', [SendController::class, 'inProgress']);
+        Route::get('sends/history', [SendController::class, 'history']);
+        Route::get('sends/available-pickup-orders', [SendController::class, 'getAvailablePickupOrders']);
+        Route::get('sends/available-delivery-items', [SendController::class, 'getAvailableDeliveryItems']);
+        Route::get('sends/available-couriers', [SendController::class, 'getAvailableCouriers']);
+        Route::post('sends/mark-completed', [SendController::class, 'markAsCompleted']);
+        Route::apiResource('sends', SendController::class);
     });
 
-    // WhatsApp (Wablas) — status, QR scan URL, dan pengaturan kredensial
-    Route::prefix('whatsapp')->group(function () {
-        Route::get('status', [WhatsAppController::class, 'status']);
-        Route::get('qr', [WhatsAppController::class, 'qr']);
-        Route::get('settings', [WhatsAppController::class, 'settings']);
-        Route::put('settings', [WhatsAppController::class, 'updateSettings']);
+    /*
+    |----------------------------------------------------------------------
+    | Operasional kantor — Admin
+    |----------------------------------------------------------------------
+    */
+    Route::middleware('role:Admin Super,Admin')->group(function () {
+        Route::post('treatments/assign', [TreatmentController::class, 'assignToUser']);
+
+        // Orders - custom routes before apiResource
+        Route::get('orders/search/customers', [OrderController::class, 'searchCustomers']);
+        Route::get('orders/search/services', [OrderController::class, 'searchServices']);
+        Route::get('orders/available-pickup', [OrderController::class, 'getAvailablePickupOrders']);
+        Route::get('orders/{orderId}/items', [OrderController::class, 'getItems']);
+        Route::post('orders/{orderId}/items', [OrderController::class, 'saveItem']);
+        Route::delete('orders/{orderId}/items/{itemId}', [OrderController::class, 'removeItem']);
+        Route::post('orders/{id}/invoice-link', [OrderController::class, 'invoiceLink']);
+        Route::apiResource('orders', OrderController::class);
+
+        Route::apiResource('services', ServiceController::class);
+
+        // Service HPP
+        Route::prefix('services/{serviceId}/hpp')->group(function () {
+            Route::get('/', [ServiceHppController::class, 'index']);
+            Route::post('/', [ServiceHppController::class, 'store']);
+            Route::post('/batch', [ServiceHppController::class, 'batchSave']);
+            Route::put('/{id}', [ServiceHppController::class, 'update']);
+            Route::delete('/{id}', [ServiceHppController::class, 'destroy']);
+        });
+
+        // Mitra kerja
+        Route::apiResource('partnerships', PartnershipController::class);
+        Route::prefix('partnerships/{partnershipId}/treatments')->group(function () {
+            Route::get('/', [PartnershipTreatmentController::class, 'myTreatments']);
+            Route::get('/statistics', [PartnershipTreatmentController::class, 'statistics']);
+            Route::get('/{treatmentId}', [PartnershipTreatmentController::class, 'show']);
+            Route::put('/{treatmentId}/status', [PartnershipTreatmentController::class, 'updateStatus']);
+        });
     });
 
-    // Broadcasts (WhatsApp/SMS Broadcasting)
-    Route::prefix('broadcasts')->group(function () {
-        // Templates Management
-        Route::get('templates', [BroadcastController::class, 'templates']);
-        Route::get('templates/{id}', [BroadcastController::class, 'showTemplate']);
-        Route::post('templates', [BroadcastController::class, 'storeTemplate']);
-        Route::put('templates/{id}', [BroadcastController::class, 'updateTemplate']);
-        Route::delete('templates/{id}', [BroadcastController::class, 'destroyTemplate']);
+    /*
+    |----------------------------------------------------------------------
+    | Pelanggan & CRM
+    |----------------------------------------------------------------------
+    */
+    Route::middleware('role:Admin Super,Admin,Admin Crm,Admin Sosmed')->group(function () {
+        Route::apiResource('customers', CustomerController::class);
 
-        // Broadcast Sending
-        Route::post('send', [BroadcastController::class, 'send']);
-        Route::get('recipients', [BroadcastController::class, 'recipients']);
-        Route::post('preview', [BroadcastController::class, 'preview']);
+        Route::prefix('broadcasts')->group(function () {
+            Route::get('templates', [BroadcastController::class, 'templates']);
+            Route::get('templates/{id}', [BroadcastController::class, 'showTemplate']);
+            Route::post('templates', [BroadcastController::class, 'storeTemplate']);
+            Route::put('templates/{id}', [BroadcastController::class, 'updateTemplate']);
+            Route::delete('templates/{id}', [BroadcastController::class, 'destroyTemplate']);
 
-        // Broadcast History
-        Route::get('/', [BroadcastController::class, 'index']);
-        Route::get('{id}', [BroadcastController::class, 'show']);
-        Route::delete('{id}', [BroadcastController::class, 'destroy']);
+            Route::post('send', [BroadcastController::class, 'send']);
+            Route::get('recipients', [BroadcastController::class, 'recipients']);
+            Route::post('preview', [BroadcastController::class, 'preview']);
+
+            Route::get('/', [BroadcastController::class, 'index']);
+            Route::get('{id}', [BroadcastController::class, 'show']);
+            Route::delete('{id}', [BroadcastController::class, 'destroy']);
+        });
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Keuangan
+    |----------------------------------------------------------------------
+    */
+    Route::middleware('role:Admin Super,Admin,Finance')->group(function () {
+        Route::get('payments', [PaymentController::class, 'index']);
+        Route::post('payments', [PaymentController::class, 'store']);
+        Route::get('payments/order/{orderId}', [PaymentController::class, 'getByOrder']);
+        Route::get('payments/unpaid-orders', [PaymentController::class, 'getUnpaidOrders']);
+        Route::delete('payments/{id}', [PaymentController::class, 'destroy']);
+
+        Route::apiResource('expenses', ExpenseController::class);
+        Route::apiResource('expense-operationals', ExpenseOperationalController::class);
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Sumber daya manusia
+    |----------------------------------------------------------------------
+    */
+    Route::middleware('role:Admin Super,Admin,HRD')->group(function () {
+        Route::apiResource('users', UserController::class);
+        Route::apiResource('roles', RoleController::class);
+
+        Route::put('absences/{id}/approve', [AttendanceController::class, 'approveAbsence']);
+        Route::put('absences/{id}/reject', [AttendanceController::class, 'rejectAbsence']);
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Pengaturan perusahaan
+    |----------------------------------------------------------------------
+    | Cabang, kalender libur, dan koneksi WhatsApp. Route baca untuk holidays
+    | dan projects sudah dibuka untuk semua di blok paling atas; di sini hanya
+    | yang mengubah data.
+    */
+    Route::middleware('role:Admin Super,Admin')->group(function () {
+        Route::post('projects', [ProjectController::class, 'store']);
+        Route::put('projects/{project}', [ProjectController::class, 'update']);
+        Route::patch('projects/{project}', [ProjectController::class, 'update']);
+        Route::delete('projects/{project}', [ProjectController::class, 'destroy']);
+
+        Route::post('holidays', [HolidayController::class, 'store']);
+        Route::put('holidays/{holiday}', [HolidayController::class, 'update']);
+        Route::patch('holidays/{holiday}', [HolidayController::class, 'update']);
+        Route::delete('holidays/{holiday}', [HolidayController::class, 'destroy']);
+
+        Route::prefix('whatsapp')->group(function () {
+            Route::get('status', [WhatsAppController::class, 'status']);
+            Route::get('qr', [WhatsAppController::class, 'qr']);
+            Route::get('settings', [WhatsAppController::class, 'settings']);
+            Route::put('settings', [WhatsAppController::class, 'updateSettings']);
+        });
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Laporan
+    |----------------------------------------------------------------------
+    | Dipecah mengikuti pengelompokan di sidebar: angka keuangan tidak boleh
+    | terbuka untuk HRD atau tim sosmed hanya karena sama-sama "laporan".
+    */
+    Route::prefix('reports')->group(function () {
+        Route::middleware('role:Admin Super,Admin,Finance')->group(function () {
+            Route::get('sales', [ReportController::class, 'sales']);
+            Route::get('payments', [ReportController::class, 'payments']);
+            Route::get('receivables', [ReportController::class, 'receivables']);
+            Route::get('orders', [ReportController::class, 'orders']);
+            Route::get('expenses', [ReportController::class, 'expenses']);
+            Route::get('hpp', [ReportController::class, 'hpp']);
+            Route::get('profit-loss', [ReportController::class, 'profitLoss']);
+            Route::get('cash-flow', [ReportController::class, 'cashFlow']);
+        });
+
+        Route::middleware('role:Admin Super,Admin')->group(function () {
+            Route::get('treatments', [ReportController::class, 'treatments']);
+            Route::get('performance', [ReportController::class, 'performance']);
+        });
+
+        Route::middleware('role:Admin Super,Admin,Admin Crm,Admin Sosmed')->group(function () {
+            Route::get('customers', [ReportController::class, 'customers']);
+            Route::get('top-services', [ReportController::class, 'topServices']);
+            Route::get('google-ads', [ReportController::class, 'googleAds']);
+            Route::get('meta-ads', [ReportController::class, 'metaAds']);
+        });
+
+        Route::middleware('role:Admin Super,Admin,HRD')->group(function () {
+            Route::get('attendance', [ReportController::class, 'attendance']);
+            Route::get('daily-notes', [ReportController::class, 'dailyNotes']);
+            Route::get('daily-notes-matrix', [ReportController::class, 'dailyNotesMatrix']);
+        });
     });
 });

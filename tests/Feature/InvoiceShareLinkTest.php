@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Project;
+use App\Models\Role;
 use App\Models\Service;
 use App\Models\Treatment;
 use App\Models\User;
@@ -340,6 +341,9 @@ class InvoiceShareLinkTest extends TestCase
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
         $user->id = 1;
+        // Route invoice-link berada di balik middleware `role:` (lihat routes/api.php). Relasi
+        // dipasang langsung, bukan lewat query, karena tabel `roles` tidak ada di skema test ini.
+        $user->setRelation('role', new Role(['name' => 'Admin']));
 
         return $user;
     }
