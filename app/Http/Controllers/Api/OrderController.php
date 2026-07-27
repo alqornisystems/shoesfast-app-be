@@ -846,6 +846,12 @@ class OrderController extends Controller
 
         $frontendUrl = (string) config('app.frontend_url');
 
+        if ($frontendUrl === '') {
+            return response()->json([
+                'message' => 'FRONTEND_URL belum dikonfigurasi, tautan invoice tidak bisa dibuat',
+            ], 500);
+        }
+
         // Mint once. Customers keep old links in their WhatsApp history, so an
         // existing token must never change — only the expiry moves forward.
         $order->invoice_token = $order->invoice_token ?: Str::random(40);

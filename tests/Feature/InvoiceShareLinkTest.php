@@ -88,6 +88,23 @@ class InvoiceShareLinkTest extends TestCase
         $this->assertEqualsWithDelta(time() + 30 * 86400, $second['expires_at'], 5);
     }
 
+    public function test_invoice_link_fails_loudly_when_frontend_url_missing(): void
+    {
+        $order = $this->seedInvoiceFixture();
+        $order->update(['invoice_token' => null, 'invoice_expires_at' => null]);
+
+        config(['app.frontend_url' => '']);
+
+        Sanctum::actingAs($this->branchAdmin());
+
+        $this->postJson('/api/orders/'.$order->id.'/invoice-link')
+            ->assertStatus(500)
+            ->assertJson(['message' => 'FRONTEND_URL belum dikonfigurasi, tautan invoice tidak bisa dibuat']);
+
+        // Nothing was written: a half-made link is worse than no link.
+        $this->assertNull(Order::withoutBranchScope()->find($order->id)->invoice_token);
+    }
+
     private function branchAdmin(int $projectId = 1): User
     {
         $user = new User(['name' => 'Admin Kemang', 'projects_id' => $projectId]);
