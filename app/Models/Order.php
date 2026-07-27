@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
     use BranchScoped;
 
     protected $table = 'orders';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     protected $fillable = [
@@ -22,6 +22,8 @@ class Order extends Model
         'total_price',
         'note',
         'status',
+        'invoice_token',
+        'invoice_expires_at',
         'is_deleted',
         'created_by',
         'modified_by',
@@ -32,6 +34,7 @@ class Order extends Model
         'total_discount' => 'integer',
         'total_price' => 'integer',
         'status' => 'integer',
+        'invoice_expires_at' => 'integer',
         'is_deleted' => 'integer',
         'created_at' => 'integer',
         'updated_at' => 'integer',
