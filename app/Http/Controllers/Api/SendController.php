@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Send;
 use App\Models\User;
 use App\Services\FcmService;
@@ -158,6 +159,13 @@ class SendController extends Controller
             'status' => 'nullable|integer|in:0,1',
         ]);
 
+        // Kurir tidak boleh menugaskan orang lain: apa pun users_id yang dikirim klien
+        // ditimpa dengan dirinya sendiri. Select yang ter-disable di layar hanya petunjuk;
+        // ini pagarnya. Admin tetap bebas memilih siapa pun.
+        if (! $this->isAdmin($request)) {
+            $validated['users_id'] = $request->user()->id;
+        }
+
         // Validate based on type
         if ($validated['type'] == 0 && ! $validated['orders_id']) {
             return response()->json([
@@ -282,6 +290,11 @@ class SendController extends Controller
             'date' => 'sometimes|date',
             'status' => 'sometimes|integer|in:0,1',
         ]);
+
+        // Sama seperti store: kurir tidak boleh memindahkan tugas ke orang lain.
+        if (! $this->isAdmin($request)) {
+            $validated['users_id'] = $request->user()->id;
+        }
 
         DB::beginTransaction();
         try {
@@ -529,6 +542,11 @@ class SendController extends Controller
             ->where('status', 0) // In progress only
             ->orderBy('date', 'DESC');
 
+        // Kurir hanya melihat pengantaran miliknya sendiri; admin melihat semuanya.
+        if (! $this->isAdmin($request)) {
+            $query->where('users_id', $request->user()->id);
+        }
+
         // Filter by type if provided
         if ($request->has('type') && $request->type !== null) {
             $query->where('type', $request->type);
@@ -583,6 +601,11 @@ class SendController extends Controller
         ])
             ->where('status', 1) // Completed only
             ->orderBy('date', 'DESC');
+
+        // Kurir hanya melihat pengantaran miliknya sendiri; admin melihat semuanya.
+        if (! $this->isAdmin($request)) {
+            $query->where('users_id', $request->user()->id);
+        }
 
         // Filter by type if provided
         if ($request->has('type') && $request->type !== null) {
@@ -684,5 +707,81 @@ class SendController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * GET /api/sends/{id}/detail
+     * Rincian barang untuk kurir: apa saja yang dikerjakan, riwayatnya, dan kelengkapannya.
+     *
+     * Endpoint tersendiri, BUKAN memakai orders/{id}/items yang admin-only — endpoint itu
+     * membuka seluruh isi pesanan termasuk harga, dan kurir tidak perlu tahu harga untuk
+     * mengantar barang. Di sini sengaja tidak ada satu pun angka rupiah.
+     */
+    public function detail(Request $request, $id)
+    {
+        $send = Send::with([
+            'order.customer',
+            'orderItem.treatments.service',
+            'orderItem.treatments.user' => function ($q) {
+                $q->withoutGlobalScopes();
+            },
+        ])->findOrFail($id);
+
+        // Kurir hanya boleh membuka pengantaran miliknya sendiri.
+        if (! $this->isAdmin($request) && (int) $send->users_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Ini bukan pengiriman Anda.'], 403);
+        }
+
+        $item = $send->orderItem;
+
+        // `checkbox` disimpan sebagai "true, false, ..." sepanjang daftar kelengkapan.
+        // Labelnya ditentukan jenis barang: 1 = Tas (7 item), selain itu Sepatu (3 item).
+        $labelTas = ['Dust Bag', 'Care Card/Card', 'Tali panjang', 'Tali pendek', 'Tag Brand', 'Price tag', 'Receipt'];
+        $labelSepatu = ['Tali Sepatu', 'Kaos Kaki', 'Box Sepatu'];
+        $label = ((int) ($item->type ?? 0)) === 1 ? $labelTas : $labelSepatu;
+
+        $nilai = $item && $item->checkbox
+            ? array_map(fn ($v) => trim($v) === 'true', explode(',', $item->checkbox))
+            : [];
+
+        $kelengkapan = [];
+        foreach ($label as $i => $nama) {
+            $kelengkapan[] = ['nama' => $nama, 'ada' => $nilai[$i] ?? false];
+        }
+
+        // Kurir yang mengantar perlu tahu masih ada tagihan atau tidak — angka ini satu-satunya
+        // rupiah di endpoint ini, dan rumusnya disalin dari PaymentController.php:77-105 supaya
+        // tidak pernah berselisih dengan layar pembayaran. Harga per item tetap tidak dikirim.
+        $order = $send->order;
+        $totalPaid = $order ? Payment::where('orders_id', $order->id)->sum('nominal') : 0;
+        $totalPrice = $order->total_price ?? 0;
+        $credit = $totalPrice - $totalPaid;
+
+        return response()->json([
+            'id' => $send->id,
+            'type' => $send->type,
+            'total_price' => $totalPrice,
+            'total_paid' => $totalPaid,
+            'credit' => $credit,
+            'payment_status' => $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid'),
+            'order_code' => $send->order->code ?? null,
+            'customer_name' => $send->order->customer->name ?? null,
+            'customer_address' => $send->order->customer->address ?? null,
+            'item_name' => $item->name ?? null,
+            'item_photo' => $item && $item->photo
+                ? (filter_var($item->photo, FILTER_VALIDATE_URL) ? $item->photo : asset('storage/'.$item->photo))
+                : null,
+            'item_note' => $item->note ?? null,
+            'kelengkapan' => $kelengkapan,
+            'pengerjaan' => $item
+                ? $item->treatments->map(fn ($t) => [
+                    'nama' => $t->service->name ?? null,
+                    'status' => (int) $t->status,
+                    'teknisi' => $t->user->name ?? null,
+                    'mulai' => $t->date_start,
+                    'selesai' => $t->done_at,
+                ])->values()
+                : [],
+        ]);
     }
 }

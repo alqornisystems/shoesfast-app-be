@@ -73,7 +73,7 @@ class AttendanceController extends Controller
 
         if ($hasApprovedAbsence) {
             return response()->json([
-                'message' => 'Anda tidak dapat melakukan absensi. Anda memiliki izin yang disetujui untuk hari ini.'
+                'message' => 'Anda tidak dapat melakukan absensi. Anda memiliki izin yang disetujui untuk hari ini.',
             ], 422);
         }
 
@@ -86,16 +86,16 @@ class AttendanceController extends Controller
 
         if ($existing) {
             return response()->json([
-                'message' => 'Anda sudah absen masuk hari ini'
+                'message' => 'Anda sudah absen masuk hari ini',
             ], 422);
         }
 
         // Get branch location
         $project = Project::find($user->projects_id ?? 1);
 
-        if (!$project || !$project->latitude || !$project->longitude) {
+        if (! $project || ! $project->latitude || ! $project->longitude) {
             return response()->json([
-                'message' => 'Lokasi cabang belum diatur. Hubungi admin.'
+                'message' => 'Lokasi cabang belum diatur. Hubungi admin.',
             ], 422);
         }
 
@@ -112,7 +112,7 @@ class AttendanceController extends Controller
         );
 
         // Validate radius (1000 meters = 1 km) - only if not WFA
-        if (!$isWfa && $distance > 1000) {
+        if (! $isWfa && $distance > 1000) {
             return response()->json([
                 'message' => 'Anda berada di luar radius absensi (1 km dari kantor)',
                 'distance' => round($distance, 2),
@@ -165,7 +165,7 @@ class AttendanceController extends Controller
 
         if ($hasApprovedAbsence) {
             return response()->json([
-                'message' => 'Anda tidak dapat melakukan absensi. Anda memiliki izin yang disetujui untuk hari ini.'
+                'message' => 'Anda tidak dapat melakukan absensi. Anda memiliki izin yang disetujui untuk hari ini.',
             ], 422);
         }
 
@@ -176,9 +176,9 @@ class AttendanceController extends Controller
             ->where('clock', '<', $tomorrow)
             ->first();
 
-        if (!$clockIn) {
+        if (! $clockIn) {
             return response()->json([
-                'message' => 'Anda belum absen masuk hari ini'
+                'message' => 'Anda belum absen masuk hari ini',
             ], 422);
         }
 
@@ -191,16 +191,16 @@ class AttendanceController extends Controller
 
         if ($existing) {
             return response()->json([
-                'message' => 'Anda sudah absen pulang hari ini'
+                'message' => 'Anda sudah absen pulang hari ini',
             ], 422);
         }
 
         // Get branch location
         $project = Project::find($user->projects_id ?? 1);
 
-        if (!$project || !$project->latitude || !$project->longitude) {
+        if (! $project || ! $project->latitude || ! $project->longitude) {
             return response()->json([
-                'message' => 'Lokasi cabang belum diatur. Hubungi admin.'
+                'message' => 'Lokasi cabang belum diatur. Hubungi admin.',
             ], 422);
         }
 
@@ -217,7 +217,7 @@ class AttendanceController extends Controller
         );
 
         // Validate radius (1000 meters = 1 km) - only if not WFA
-        if (!$isWfa && $distance > 1000) {
+        if (! $isWfa && $distance > 1000) {
             return response()->json([
                 'message' => 'Anda berada di luar radius absensi (1 km dari kantor)',
                 'distance' => round($distance, 2),
@@ -262,13 +262,20 @@ class AttendanceController extends Controller
             ? strtotime($request->input('start_date'))
             : strtotime('-7 days');
         $endDate = $request->input('end_date')
-            ? strtotime($request->input('end_date') . ' 23:59:59')
+            ? strtotime($request->input('end_date').' 23:59:59')
             : strtotime('today 23:59:59');
 
         // Determine if this is for report (all users) or personal (logged in user only)
         // Convert string "true"/"false" to boolean
         $reportModeParam = $request->input('report_mode', false);
         $isReportMode = $reportModeParam === 'true' || $reportModeParam === true || $reportModeParam === 1 || $reportModeParam === '1';
+
+        // Mode laporan melewati branch scope dan menampilkan absensi SEMUA karyawan. Sebelumnya
+        // parameter ini tidak dijaga sama sekali: siapa pun cukup menambahkan ?report_mode=true
+        // untuk membaca absensi seluruh perusahaan. Hanya admin yang boleh.
+        if ($isReportMode && ! $this->isAdmin($request)) {
+            $isReportMode = false;
+        }
 
         // Build query
         if ($isReportMode) {
@@ -283,8 +290,10 @@ class AttendanceController extends Controller
                 ->where('clock', '<=', $endDate);
         }
 
-        // Filter by specific user_id if provided (for admin viewing specific user)
-        if ($request->has('user_id') && $request->input('user_id')) {
+        // Filter by specific user_id if provided (for admin viewing specific user).
+        // Untuk non-admin parameter ini diabaikan — kalau dihormati, absensi orang lain bisa
+        // dibaca hanya dengan menebak sebuah id.
+        if ($this->isAdmin($request) && $request->has('user_id') && $request->input('user_id')) {
             $query->where('users_id', $request->input('user_id'));
         }
 
@@ -300,7 +309,7 @@ class AttendanceController extends Controller
 
         // Group by date and user
         $grouped = $attendances->groupBy(function ($item) {
-            return date('Y-m-d', $item->clock) . '-' . $item->users_id;
+            return date('Y-m-d', $item->clock).'-'.$item->users_id;
         })->map(function ($group) use ($users) {
             $clockIn = $group->where('type', 0)->first();
             $clockOut = $group->where('type', 1)->first();
@@ -340,8 +349,13 @@ class AttendanceController extends Controller
 
         $query = AttendanceAbsence::with('user');
 
-        // HRD/Admin can see all, others only see their own
-        if (!$user->is_super_admin && $user->role !== 'HRD' && $user->role !== 'Admin') {
+        // Hanya admin yang melihat pengajuan semua orang; sisanya miliknya sendiri.
+        //
+        // Penjaga sebelumnya tidak pernah bekerja seperti yang tertulis: `$user->is_super_admin`
+        // bukan atribut apa pun di model User (selalu null), dan `$user->role` adalah objek Role,
+        // bukan string — jadi `!== 'HRD'` selalu benar. Sekarang dibandingkan lewat isAdmin(),
+        // yang membaca nama jabatan.
+        if (! $this->isAdmin($request)) {
             $query->where('users_id', $user->id);
         }
 
@@ -386,23 +400,23 @@ class AttendanceController extends Controller
 
         $user = $request->user();
         $dateStart = strtotime($request->input('date_start'));
-        $dateEnd = strtotime($request->input('date_end') . ' 23:59:59');
+        $dateEnd = strtotime($request->input('date_end').' 23:59:59');
         $totalDays = floor(($dateEnd - $dateStart) / 86400) + 1;
 
         // Handle photo upload if exists
         $photoFilename = null;
-        if ($request->has('photo') && !empty($request->input('photo'))) {
+        if ($request->has('photo') && ! empty($request->input('photo'))) {
             try {
                 $base64Image = $request->input('photo');
                 $imageData = base64_decode($base64Image);
 
                 // Generate unique filename
-                $photoFilename = 'absence_' . time() . '_' . uniqid() . '.jpg';
+                $photoFilename = 'absence_'.time().'_'.uniqid().'.jpg';
 
                 // Save to storage/app/public/absences/
-                \Storage::disk('public')->put('absences/' . $photoFilename, $imageData);
+                \Storage::disk('public')->put('absences/'.$photoFilename, $imageData);
             } catch (\Exception $e) {
-                \Log::error('Failed to save absence photo: ' . $e->getMessage());
+                \Log::error('Failed to save absence photo: '.$e->getMessage());
                 // Continue without photo if upload fails
             }
         }
@@ -482,7 +496,7 @@ class AttendanceController extends Controller
     // Helpers
     private function getAbsenceTypeLabel(int $type): string
     {
-        return match($type) {
+        return match ($type) {
             0 => 'Sakit',
             1 => 'Izin',
             2 => 'Cuti',
@@ -492,7 +506,7 @@ class AttendanceController extends Controller
 
     private function getApprovalLabel(int $status): string
     {
-        return match($status) {
+        return match ($status) {
             0 => 'Pending',
             1 => 'Disetujui',
             2 => 'Ditolak',

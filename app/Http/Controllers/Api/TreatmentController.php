@@ -32,6 +32,13 @@ class TreatmentController extends Controller
                 $q->where('status', '!=', 3); // Not cancelled
             });
 
+        // Staf lapangan hanya melihat pekerjaannya sendiri; admin melihat semuanya.
+        // Daftar waiting list dikecualikan — isinya justru pekerjaan yang BELUM punya pemilik,
+        // dan dari situlah teknisi/kurir mengambil pekerjaan untuk dirinya.
+        if (! $this->isAdmin($request) && ($request->input('page_type') ?? $request->input('page', 'waiting_list')) !== 'waiting_list') {
+            $query->where('users_id', $request->user()->id);
+        }
+
         // Filter by page type (accept both 'page' and 'page_type' parameters)
         $page = $request->input('page_type') ?? $request->input('page', 'waiting_list');
 
@@ -248,6 +255,17 @@ class TreatmentController extends Controller
         $treatment = Treatment::with(['user', 'orderItem.order'])->findOrFail($id);
         $oldStatus = $treatment->status;
 
+        // Status: 0 = sedang dikerjakan, 1 = siap QC, 2 = selesai (lolos QC).
+        //
+        // Teknisi hanya boleh mengantar pekerjaan SAMPAI meja QC, yaitu menaikkan 0 -> 1.
+        // Begitu status 1 tercapai, QC Pass/Fail adalah keputusan admin; teknisi tidak boleh
+        // meluluskan pekerjaannya sendiri maupun menariknya mundur ke 0.
+        if (! $this->isAdmin($request) && (int) $treatment->status >= 1) {
+            return response()->json([
+                'message' => 'Pekerjaan sudah masuk QC. Kelanjutannya hanya bisa dilakukan admin.',
+            ], 403);
+        }
+
         $validated = $request->validate([
             'status' => 'required|integer|in:0,1,2',
             'note' => 'nullable|string',
@@ -429,5 +447,56 @@ class TreatmentController extends Controller
         $elapsed = $now - $dateStart;
 
         return round(($elapsed / $totalDuration) * 100);
+    }
+
+    /**
+     * POST /api/treatments/claim
+     * Teknisi/kurir mengambil pekerjaan dari waiting list — langsung jadi miliknya.
+     *
+     * Tanpa persetujuan admin: alur di lapangan menuntut cepat, dan menahan pekerjaan di
+     * ruang tunggu hanya menambah satu orang yang harus menekan tombol sebelum ada yang
+     * mulai bekerja. Pekerjaan yang sudah dipegang orang lain tetap tidak bisa diambil.
+     */
+    public function claim(Request $request)
+    {
+        $validated = $request->validate([
+            'treatment_ids' => 'required|array|min:1',
+            'treatment_ids.*' => 'integer|exists:treatments,id',
+        ]);
+
+        $user = $request->user();
+        $diambil = 0;
+        $ditolak = [];
+
+        DB::beginTransaction();
+        try {
+            foreach (Treatment::whereIn('id', $validated['treatment_ids'])->get() as $treatment) {
+                // Sudah dipegang orang atau dikerjakan mitra: lewati, jangan rebut.
+                if ($treatment->users_id !== null || $treatment->partnerships_id !== null) {
+                    $ditolak[] = $treatment->id;
+
+                    continue;
+                }
+
+                $treatment->users_id = $user->id;
+                $treatment->modified_by = $user->id;
+                $treatment->save();
+                $diambil++;
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json(['message' => 'Gagal mengambil pekerjaan.'], 500);
+        }
+
+        return response()->json([
+            'message' => $diambil > 0
+                ? "{$diambil} pekerjaan berhasil diambil."
+                : 'Pekerjaan sudah diambil orang lain.',
+            'diambil' => $diambil,
+            'ditolak' => $ditolak,
+        ]);
     }
 }

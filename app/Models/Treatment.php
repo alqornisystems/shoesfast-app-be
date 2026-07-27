@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Model;
 
 class Treatment extends Model
 {
     use BranchScoped;
 
     protected $table = 'treatments';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     protected $fillable = [
