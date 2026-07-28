@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
 use App\Http\Controllers\Api\Customer\AuthController as CustomerAuthController;
 use App\Http\Controllers\Api\Customer\CatalogController as CustomerCatalogController;
+use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
@@ -84,6 +85,12 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
     Route::get('auth/me', [CustomerAuthController::class, 'me']);
     Route::post('auth/logout', [CustomerAuthController::class, 'logout']);
     Route::put('profile', [CustomerProfileController::class, 'update']);
+
+    Route::get('orders', [CustomerOrderController::class, 'index']);
+    // Rute aksi khusus SEBELUM orders/{id}, kalau tidak 'invoice' tertangkap
+    // sebagai {id} — aturan yang sudah berlaku di seluruh berkas ini.
+    Route::get('orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
+    Route::get('orders/{id}', [CustomerOrderController::class, 'show']);
 });
 
 // Protected
