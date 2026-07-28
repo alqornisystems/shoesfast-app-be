@@ -186,7 +186,9 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_active')->default(1);
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
+            $t->integer('created_by')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('reward_redemptions', function (Blueprint $t) {
@@ -200,7 +202,9 @@ trait CreatesCustomerSchema
             $t->integer('date');
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
+            $t->integer('created_by')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('settings', function (Blueprint $t) {

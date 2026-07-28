@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\RewardController as AdminRewardController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
@@ -294,6 +295,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:Admin Super,Admin')->group(function () {
         Route::put('absences/{id}/approve', [AttendanceController::class, 'approveAbsence']);
         Route::put('absences/{id}/reject', [AttendanceController::class, 'rejectAbsence']);
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Program member: katalog hadiah, penukaran poin, klaim garansi
+    |----------------------------------------------------------------------
+    | Sisi admin dari apa yang dihasilkan portal pelanggan. Daftar peran di
+    | sini harus cermin navGroups di app-sidebar.tsx — kalau salah satu
+    | berubah, menu tampil tapi datanya 403.
+    */
+    Route::middleware('role:Admin Super,Admin')->group(function () {
+        Route::apiResource('rewards', AdminRewardController::class)
+            ->only(['index', 'store', 'update', 'destroy']);
     });
 
     /*
