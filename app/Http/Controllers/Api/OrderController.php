@@ -161,6 +161,13 @@ class OrderController extends Controller
             'status' => $order->status,
             'due_date' => strtotime(date('Y-m-d', strtotime(date('Y-m-d', $order->date).' +3 days'))),
             'has_pickup' => $hasPickup,
+            // Kurir butuh ini untuk tahu ke mana menjemput. Pesanan yang
+            // dibuat admin di konter tidak punya alamat jemput dan bernilai
+            // null; source 1 menandai pesanan yang datang dari portal dan
+            // belum diverifikasi petugas.
+            'pickup_address' => $order->pickup_address,
+            'pickup_maps' => $order->pickup_maps,
+            'source' => (int) $order->source,
             'customer' => [
                 'id' => $order->customer->id,
                 'name' => $order->customer->name,

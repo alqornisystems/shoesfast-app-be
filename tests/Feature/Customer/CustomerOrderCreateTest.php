@@ -192,6 +192,31 @@ class CustomerOrderCreateTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_admin_order_detail_exposes_pickup_address(): void
+    {
+        // Tanpa ini kurir tidak tahu harus menjemput ke mana: pesanan portal
+        // menyimpan alamatnya, tapi admin panel tidak pernah menampilkannya.
+        $this->customer([
+            'latitude' => -7.98000000, 'longitude' => 112.63000000,
+            'maps' => 'https://www.google.co.id/maps/place/@-7.98,112.63,17z',
+        ]);
+
+        $body = $this->postJson('/api/customer/orders', $this->payload([
+            'pickup' => ['method' => 'jemput', 'date' => '2026-08-01'],
+        ]))->assertStatus(201)->json();
+
+        $user = new \App\Models\User(['name' => 'Admin', 'projects_id' => 1]);
+        $user->id = 1;
+        $user->setRelation('role', new \App\Models\Role(['name' => 'Admin']));
+        Sanctum::actingAs($user);
+
+        $detail = $this->getJson('/api/orders/'.$body['id'])->assertStatus(200)->json();
+
+        $this->assertSame('Jl. Melati 10', $detail['pickup_address']);
+        $this->assertStringContainsString('112.63', $detail['pickup_maps']);
+        $this->assertSame(1, $detail['source']);
+    }
+
     public function test_order_code_increments_within_the_month(): void
     {
         $this->customer();
