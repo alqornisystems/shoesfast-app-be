@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Customer\MembershipController as CustomerMembership
 use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
 use App\Http\Controllers\Api\Customer\RewardController as CustomerRewardController;
+use App\Http\Controllers\Api\Customer\SettingController as CustomerSettingController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
 use App\Http\Controllers\Api\DashboardController;
@@ -82,6 +83,11 @@ Route::prefix('customer/auth')->group(function () {
 // Katalog terbuka tanpa login supaya calon pelanggan bisa melihat harga
 // sebelum memutuskan mendaftar.
 Route::get('customer/services', [CustomerCatalogController::class, 'index'])
+    ->middleware('throttle:60,1');
+
+// Teks syarat gratis jemput dibaca portal sebelum pelanggan mengirim
+// permintaan. Publik karena calon pelanggan boleh membacanya sebelum masuk.
+Route::get('customer/settings', [CustomerSettingController::class, 'index'])
     ->middleware('throttle:60,1');
 
 Route::middleware('auth:customer')->prefix('customer')->group(function () {
