@@ -2,16 +2,22 @@
 
 namespace App\Models;
 
+use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
+use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Laravel\Sanctum\HasApiTokens;
 
-class Customer extends Model
+class Customer extends Model implements AuthenticatableContract
 {
+    use AuthenticatableTrait, HasApiTokens;
+
     protected $table = 'customers';
 
     protected $dateFormat = 'U';
 
     const CREATED_AT = 'created_at';
+
     const UPDATED_AT = 'modified_at';
 
     protected $fillable = [
@@ -31,10 +37,18 @@ class Customer extends Model
         'member_code',
         'member_since',
         'points',
+        'latitude',
+        'longitude',
+        'pin',
+        'pin_created_at',
+        'pin_created_ip',
         'is_deleted',
         'created_by',
         'modified_by',
     ];
+
+    // PIN tidak pernah ikut dalam respons mana pun.
+    protected $hidden = ['pin'];
 
     protected $casts = [
         'date_of_birth' => 'integer',
@@ -43,7 +57,16 @@ class Customer extends Model
         'is_deleted' => 'integer',
         'is_member' => 'integer',
         'points' => 'integer',
+        'pin_created_at' => 'integer',
     ];
+
+    /**
+     * Kolom kata sandi tabel ini bernama `pin`, bukan `password`.
+     */
+    public function getAuthPassword(): string
+    {
+        return (string) $this->pin;
+    }
 
     protected static function boot()
     {
@@ -60,6 +83,7 @@ class Customer extends Model
     public function delete()
     {
         $this->is_deleted = 1;
+
         return $this->save();
     }
 
