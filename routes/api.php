@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
 use App\Http\Controllers\Api\Customer\AuthController as CustomerAuthController;
+use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
 use App\Http\Controllers\Api\DashboardController;
@@ -76,6 +77,7 @@ Route::prefix('customer/auth')->group(function () {
 Route::middleware('auth:customer')->prefix('customer')->group(function () {
     Route::get('auth/me', [CustomerAuthController::class, 'me']);
     Route::post('auth/logout', [CustomerAuthController::class, 'logout']);
+    Route::put('profile', [CustomerProfileController::class, 'update']);
 });
 
 // Protected
