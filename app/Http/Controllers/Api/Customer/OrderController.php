@@ -8,8 +8,10 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Send;
+use App\Services\PickupZoneService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
@@ -102,6 +104,123 @@ class OrderController extends Controller
             'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item))->values(),
             'timeline' => $this->timeline($order, $items),
         ]);
+    }
+
+    // POST /api/customer/orders
+    public function store(Request $request, PickupZoneService $pickupZone): JsonResponse
+    {
+        $customer = $request->user();
+
+        // Tidak ada 'price' dan tidak ada 'services_id' di sini. Harga dan
+        // layanan ditentukan admin saat barang diperiksa; endpoint ini tidak
+        // boleh pernah membaca harga dari badan permintaan.
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.type' => ['required', 'integer', 'in:0,1,2'],
+            'items.*.name' => ['required', 'string', 'max:100'],
+            'items.*.checkbox' => ['nullable', 'array'],
+            'items.*.checkbox.*' => ['boolean'],
+            'items.*.note' => ['nullable', 'string'],
+            'pickup.method' => ['required', 'in:jemput,antar_sendiri,ekspedisi'],
+            'pickup.date' => ['nullable', 'date'],
+        ]);
+
+        $method = $validated['pickup']['method'];
+        $freePickup = $pickupZone->evaluate($customer);
+
+        // Jarak tidak pernah menolak. Yang menolak adalah ketiadaan titik
+        // peta pada metode jemput: kurir butuh tujuan, dan pelanggan selalu
+        // bisa memilih antar sendiri atau ekspedisi sementara itu.
+        if ($method === 'jemput' && $freePickup['reason'] === 'tanpa_koordinat') {
+            return response()->json([
+                'message' => 'Titik peta belum diisi. Lengkapi alamat di profil dulu.',
+            ], 422);
+        }
+
+        $order = DB::transaction(function () use ($customer, $validated, $method) {
+            $order = Order::withoutGlobalScope('branch')->create([
+                'projects_id' => $customer->projects_id,
+                'customers_id' => $customer->id,
+                'code' => $this->generateCode(),
+                'date' => time(),
+                'total_price' => 0,
+                'total_discount' => 0,
+                'status' => 0,
+                'source' => 1,
+                'pickup_address' => $method === 'jemput' ? $customer->address : null,
+                'pickup_maps' => $method === 'jemput' ? $customer->maps : null,
+            ]);
+
+            foreach ($validated['items'] as $itemData) {
+                OrderItem::withoutGlobalScope('branch')->create([
+                    'projects_id' => $customer->projects_id,
+                    'orders_id' => $order->id,
+                    'name' => $itemData['name'],
+                    'type' => $itemData['type'],
+                    'price' => 0,
+                    'discount' => 0,
+                    'status' => 0,
+                    'note' => $itemData['note'] ?? null,
+                    'checkbox' => $this->serializeCheckbox($itemData),
+                ]);
+            }
+
+            if ($method === 'jemput') {
+                Send::withoutGlobalScope('branch')->create([
+                    'projects_id' => $customer->projects_id,
+                    'orders_id' => $order->id,
+                    // 0 berarti kurir belum ditugaskan; kolomnya NOT NULL di
+                    // produksi sehingga tidak bisa dibiarkan kosong.
+                    'users_id' => 0,
+                    'date' => isset($validated['pickup']['date'])
+                        ? strtotime($validated['pickup']['date'])
+                        : time(),
+                    'type' => 0,
+                    'status' => 0,
+                ]);
+            }
+
+            return $order;
+        });
+
+        return response()->json([
+            'id' => $order->id,
+            'code' => $order->code,
+            'free_pickup' => $freePickup,
+        ], 201);
+    }
+
+    /**
+     * Format cermin admin panel: INV + tahun bulan + urutan 4 digit.
+     */
+    private function generateCode(): string
+    {
+        $prefix = 'INV'.date('Ym');
+
+        $last = Order::withoutGlobalScope('branch')
+            ->where('code', 'like', $prefix.'%')
+            ->orderByDesc('code')
+            ->value('code');
+
+        $sequence = $last ? ((int) substr($last, strlen($prefix))) + 1 : 1;
+
+        return $prefix.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    private function serializeCheckbox(array $itemData): string
+    {
+        $size = ((int) $itemData['type'] === 1)
+            ? count(self::BAG_CHECKLIST)
+            : count(self::SHOE_CHECKLIST);
+
+        $flags = $itemData['checkbox'] ?? [];
+
+        $normalized = [];
+        for ($index = 0; $index < $size; $index++) {
+            $normalized[] = ! empty($flags[$index]) ? 'true' : 'false';
+        }
+
+        return implode(', ', $normalized);
     }
 
     // GET /api/customer/orders/{id}/invoice

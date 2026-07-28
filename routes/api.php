@@ -87,6 +87,7 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
     Route::put('profile', [CustomerProfileController::class, 'update']);
 
     Route::get('orders', [CustomerOrderController::class, 'index']);
+    Route::post('orders', [CustomerOrderController::class, 'store']);
     // Rute aksi khusus SEBELUM orders/{id}, kalau tidak 'invoice' tertangkap
     // sebagai {id} — aturan yang sudah berlaku di seluruh berkas ini.
     Route::get('orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
