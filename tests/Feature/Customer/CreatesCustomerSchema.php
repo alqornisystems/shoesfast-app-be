@@ -35,6 +35,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('customers', function (Blueprint $t) {
@@ -101,6 +103,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('services', function (Blueprint $t) {
@@ -114,6 +118,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('treatments', function (Blueprint $t) {
@@ -133,6 +139,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('payments', function (Blueprint $t) {
@@ -146,6 +154,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('sends', function (Blueprint $t) {
@@ -160,6 +170,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('guarantees', function (Blueprint $t) {
@@ -173,6 +185,8 @@ trait CreatesCustomerSchema
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_by')->nullable();
         });
 
         Schema::create('rewards', function (Blueprint $t) {

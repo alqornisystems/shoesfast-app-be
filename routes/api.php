@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\ClaimController as AdminClaimController;
+use App\Http\Controllers\Api\Admin\RedemptionController as AdminRedemptionController;
 use App\Http\Controllers\Api\Admin\RewardController as AdminRewardController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
@@ -308,6 +310,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:Admin Super,Admin')->group(function () {
         Route::apiResource('rewards', AdminRewardController::class)
             ->only(['index', 'store', 'update', 'destroy']);
+
+        Route::get('redemptions', [AdminRedemptionController::class, 'index']);
+        Route::post('redemptions/{id}/complete', [AdminRedemptionController::class, 'complete']);
+
+        Route::get('guarantee-claims', [AdminClaimController::class, 'index']);
+        Route::put('guarantee-claims/{id}', [AdminClaimController::class, 'update']);
     });
 
     /*
