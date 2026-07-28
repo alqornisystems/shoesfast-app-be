@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
 use App\Http\Controllers\Api\Customer\AuthController as CustomerAuthController;
+use App\Http\Controllers\Api\Customer\CatalogController as CustomerCatalogController;
 use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
@@ -73,6 +74,11 @@ Route::prefix('customer/auth')->group(function () {
     Route::post('register', [CustomerAuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('forgot-pin', [CustomerAuthController::class, 'forgotPin'])->middleware('throttle:5,1');
 });
+
+// Katalog terbuka tanpa login supaya calon pelanggan bisa melihat harga
+// sebelum memutuskan mendaftar.
+Route::get('customer/services', [CustomerCatalogController::class, 'index'])
+    ->middleware('throttle:60,1');
 
 Route::middleware('auth:customer')->prefix('customer')->group(function () {
     Route::get('auth/me', [CustomerAuthController::class, 'me']);
