@@ -230,6 +230,12 @@ Route::middleware('auth:sanctum')->group(function () {
     |----------------------------------------------------------------------
     */
     Route::middleware('role:Admin Super,Admin,Admin Crm,Admin Sosmed')->group(function () {
+        // Sebelum apiResource, kalau tidak 'reset-pin' tertangkap sebagai {id}.
+        // Hanya Admin Super dan Admin: reset PIN mengembalikan akun pelanggan
+        // ke tangan pemiliknya, jadi bukan wewenang CRM atau Sosmed.
+        Route::post('customers/{id}/reset-pin', [CustomerController::class, 'resetPin'])
+            ->middleware('role:Admin Super,Admin');
+
         Route::apiResource('customers', CustomerController::class);
 
         Route::prefix('broadcasts')->group(function () {

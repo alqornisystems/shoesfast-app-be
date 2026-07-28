@@ -38,15 +38,15 @@ class CustomerController extends Controller
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%")
-                  ->orWhere('hobby', 'like', "%{$search}%")
-                  ->orWhere('favorite_food', 'like', "%{$search}%")
-                  ->orWhere('behavior', 'like', "%{$search}%")
-                  ->orWhereHas('projects', function ($projectQuery) use ($search) {
-                      $projectQuery->where('name', 'like', "%{$search}%");
-                  });
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhere('hobby', 'like', "%{$search}%")
+                    ->orWhere('favorite_food', 'like', "%{$search}%")
+                    ->orWhere('behavior', 'like', "%{$search}%")
+                    ->orWhereHas('projects', function ($projectQuery) use ($search) {
+                        $projectQuery->where('name', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -57,6 +57,7 @@ class CustomerController extends Controller
         $customers->getCollection()->transform(function ($customer) {
             $customer->project_names = $customer->projects->pluck('name')->toArray();
             $customer->project_ids = $customer->projects->pluck('id')->toArray();
+
             return $customer;
         });
 
@@ -107,7 +108,7 @@ class CustomerController extends Controller
         $customer = Customer::create($data);
 
         // Sync projects (many-to-many)
-        if (!empty($projectIds)) {
+        if (! empty($projectIds)) {
             $customer->projects()->sync($projectIds);
         }
 
@@ -151,7 +152,7 @@ class CustomerController extends Controller
             'favorite_food' => 'nullable|string',
             'behavior' => 'nullable|string',
             'is_member' => 'nullable|boolean',
-            'member_code' => 'nullable|string|max:50|unique:customers,member_code,' . $id,
+            'member_code' => 'nullable|string|max:50|unique:customers,member_code,'.$id,
             'member_since' => 'nullable|date',
             'points' => 'nullable|integer|min:0',
             'project_ids' => 'nullable|array',
@@ -176,7 +177,7 @@ class CustomerController extends Controller
         $customer->update($data);
 
         // Sync projects (many-to-many)
-        if (!empty($projectIds)) {
+        if (! empty($projectIds)) {
             $customer->projects()->sync($projectIds);
         } else {
             $customer->projects()->detach();
@@ -205,11 +206,41 @@ class CustomerController extends Controller
     }
 
     /**
+     * POST /api/customers/{id}/reset-pin
+     *
+     * Jalur pemulihan untuk 3.781 pelanggan yang tidak punya email, dan jalan
+     * keluar kalau akun diklaim orang lain saat PIN pertama dibuat.
+     */
+    public function resetPin(string $id)
+    {
+        $customer = Customer::find($id);
+
+        if (! $customer) {
+            return response()->json(['message' => 'Pelanggan tidak ditemukan'], 404);
+        }
+
+        $customer->update([
+            'pin' => null,
+            'pin_created_at' => null,
+            'pin_created_ip' => null,
+            'modified_by' => auth()->id(),
+        ]);
+
+        // Mencabut token wajib: kalau sesi pengklaim tetap hidup, mengosongkan
+        // PIN tidak mengembalikan akun ke pemilik aslinya.
+        $customer->tokens()->delete();
+
+        return response()->json([
+            'message' => 'PIN direset. Pelanggan bisa membuat PIN baru saat masuk.',
+        ]);
+    }
+
+    /**
      * Normalize phone number (remove 0 or 62 prefix)
      */
     private function normalizePhone(?string $phone): ?string
     {
-        if (!$phone) {
+        if (! $phone) {
             return null;
         }
 
