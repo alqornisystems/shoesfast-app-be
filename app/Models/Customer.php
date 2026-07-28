@@ -115,4 +115,13 @@ class Customer extends Model implements AuthenticatableContract
     {
         return $this->hasMany(Order::class, 'customers_id');
     }
+
+    /**
+     * Cabang tempat pelanggan terdaftar. Berbeda dari projects() yang
+     * many-to-many; ini kolom projects_id yang dipakai untuk cakupan data.
+     */
+    public function project()
+    {
+        return $this->belongsTo(Project::class, 'projects_id');
+    }
 }

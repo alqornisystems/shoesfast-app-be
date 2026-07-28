@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
+use App\Http\Controllers\Api\Customer\AuthController as CustomerAuthController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
 use App\Http\Controllers\Api\DashboardController;
@@ -54,6 +55,28 @@ Route::post('webhook', [WebhookController::class, 'whatsapp']);
 // Throttle supaya token 40 karakter tidak bisa digempur brute force.
 Route::get('public/invoice/{token}', [PublicInvoiceController::class, 'show'])
     ->middleware('throttle:60,1');
+
+/*
+|--------------------------------------------------------------------------
+| Portal pelanggan
+|--------------------------------------------------------------------------
+| Guard `customer` terpisah penuh dari guard staf. Token staf tidak berlaku
+| di sini dan sebaliknya — pemisahnya ada di config/auth.php, bukan di sini.
+*/
+Route::prefix('customer/auth')->group(function () {
+    Route::post('check-phone', [CustomerAuthController::class, 'checkPhone'])->middleware('throttle:20,1');
+    Route::post('login', [CustomerAuthController::class, 'login'])->middleware('throttle:10,1');
+    // Pembuatan PIN dibatasi ketat: tanpa verifikasi kanal, ini satu-satunya
+    // rem terhadap klaim akun borongan per IP.
+    Route::post('set-pin', [CustomerAuthController::class, 'setPin'])->middleware('throttle:5,1');
+    Route::post('register', [CustomerAuthController::class, 'register'])->middleware('throttle:5,1');
+    Route::post('forgot-pin', [CustomerAuthController::class, 'forgotPin'])->middleware('throttle:5,1');
+});
+
+Route::middleware('auth:customer')->prefix('customer')->group(function () {
+    Route::get('auth/me', [CustomerAuthController::class, 'me']);
+    Route::post('auth/logout', [CustomerAuthController::class, 'logout']);
+});
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {
