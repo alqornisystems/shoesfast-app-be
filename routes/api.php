@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
 use App\Http\Controllers\Api\Customer\AuthController as CustomerAuthController;
 use App\Http\Controllers\Api\Customer\CatalogController as CustomerCatalogController;
+use App\Http\Controllers\Api\Customer\MembershipController as CustomerMembershipController;
 use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
 use App\Http\Controllers\Api\CustomerController;
@@ -92,6 +93,9 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
     // sebagai {id} — aturan yang sudah berlaku di seluruh berkas ini.
     Route::get('orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
     Route::get('orders/{id}', [CustomerOrderController::class, 'show']);
+
+    Route::post('membership/join', [CustomerMembershipController::class, 'join']);
+    Route::get('membership', [CustomerMembershipController::class, 'show']);
 });
 
 // Protected

@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Payment;
 use App\Models\Order;
+use App\Models\Payment;
+use App\Services\CustomerPointService;
 use App\Services\ReportCacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,10 +46,10 @@ class PaymentController extends Controller
                             $q->orWhereDoesntHave('payments');
                         } elseif ($status === 'partial') {
                             $q->orWhereRaw('total_price > (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                              ->whereHas('payments');
+                                ->whereHas('payments');
                         } elseif ($status === 'paid') {
                             $q->orWhereRaw('total_price = (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                              ->whereHas('payments');
+                                ->whereHas('payments');
                         }
                     }
                 });
@@ -58,14 +59,14 @@ class PaymentController extends Controller
                 if ($status === 'paid') {
                     // Fully paid
                     $query->whereRaw('total_price = (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                          ->whereHas('payments');
+                        ->whereHas('payments');
                 } elseif ($status === 'unpaid') {
                     // No payment yet
                     $query->whereDoesntHave('payments');
                 } elseif ($status === 'partial') {
                     // Partial payment (has payment but not full)
                     $query->whereRaw('total_price > (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                          ->whereHas('payments');
+                        ->whereHas('payments');
                 }
             }
         }
@@ -75,7 +76,7 @@ class PaymentController extends Controller
 
         // Transform data with payment info
         $orders->getCollection()->transform(function ($order) {
-            $dueDate = strtotime(date('Y-m-d', strtotime(date('Y-m-d', $order->date) . ' +3 days')));
+            $dueDate = strtotime(date('Y-m-d', strtotime(date('Y-m-d', $order->date).' +3 days')));
 
             // Get all payments for this order and sum them
             $totalPaid = Payment::where('orders_id', $order->id)->sum('nominal');
@@ -90,7 +91,7 @@ class PaymentController extends Controller
             $late = '-';
             if ($totalPaid === 0 && $dueDate < time()) {
                 $lateDays = floor((time() - $dueDate) / 86400);
-                $late = $lateDays . ' hari';
+                $late = $lateDays.' hari';
             }
 
             return [
@@ -161,6 +162,12 @@ class PaymentController extends Controller
 
             DB::commit();
 
+            // Poin diberikan di sini, bukan saat status pesanan berubah:
+            // kelunasan adalah satu-satunya sinyal yang artinya tidak pernah
+            // berubah. Idempoten lewat orders.points_awarded, jadi cicilan
+            // kedua dan ketiga tidak menambah poin lagi.
+            app(CustomerPointService::class)->awardIfSettled((int) $validated['orders_id']);
+
             // Invalidate affected report caches
             ReportCacheService::invalidate([
                 'payments',
@@ -175,6 +182,7 @@ class PaymentController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'message' => 'Gagal menyimpan pembayaran',
                 'error' => $e->getMessage(),
@@ -200,11 +208,11 @@ class PaymentController extends Controller
             }
 
             // Generate unique filename
-            $fileName = uniqid() . '.' . $type;
+            $fileName = uniqid().'.'.$type;
             $directory = storage_path("app/public/{$folder}");
 
             // Create directory if not exists
-            if (!file_exists($directory)) {
+            if (! file_exists($directory)) {
                 mkdir($directory, 0755, true);
             }
 
@@ -266,6 +274,7 @@ class PaymentController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'message' => 'Gagal menghapus pembayaran',
                 'error' => $e->getMessage(),
@@ -285,10 +294,10 @@ class PaymentController extends Controller
             ->where(function ($q) use ($search) {
                 if ($search) {
                     $q->where('code', 'LIKE', "%{$search}%")
-                      ->orWhereHas('customer', function ($qCustomer) use ($search) {
-                          $qCustomer->where('name', 'LIKE', "%{$search}%")
-                              ->orWhere('phone', 'LIKE', "%{$search}%");
-                      });
+                        ->orWhereHas('customer', function ($qCustomer) use ($search) {
+                            $qCustomer->where('name', 'LIKE', "%{$search}%")
+                                ->orWhere('phone', 'LIKE', "%{$search}%");
+                        });
                 }
             })
             ->orderBy('date', 'DESC')
@@ -313,6 +322,7 @@ class PaymentController extends Controller
                     'customer_phone' => $order->customer->phone,
                 ];
             }
+
             return null;
         })->filter(); // Remove null values
 
