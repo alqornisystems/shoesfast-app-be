@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Customer\CatalogController as CustomerCatalogContro
 use App\Http\Controllers\Api\Customer\MembershipController as CustomerMembershipController;
 use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
+use App\Http\Controllers\Api\Customer\RewardController as CustomerRewardController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DailyNoteController;
 use App\Http\Controllers\Api\DashboardController;
@@ -96,6 +97,10 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
 
     Route::post('membership/join', [CustomerMembershipController::class, 'join']);
     Route::get('membership', [CustomerMembershipController::class, 'show']);
+
+    Route::get('rewards', [CustomerRewardController::class, 'index']);
+    Route::post('rewards/{id}/redeem', [CustomerRewardController::class, 'redeem']);
+    Route::get('redemptions', [CustomerRewardController::class, 'history']);
 });
 
 // Protected
