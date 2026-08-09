@@ -75,7 +75,7 @@ class CustomerGuardTest extends TestCase
             $t->string('pin_created_ip')->nullable();
             $t->tinyInteger('is_member')->default(0);
             $t->string('member_code')->nullable();
-            $t->integer('member_since')->nullable();
+            $t->date('member_since')->nullable();
             $t->integer('points')->default(0);
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();

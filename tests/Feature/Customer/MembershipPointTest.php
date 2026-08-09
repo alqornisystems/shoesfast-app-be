@@ -60,7 +60,9 @@ class MembershipPointTest extends TestCase
 
         $fresh = Customer::withoutGlobalScope('branch')->find($customer->id);
         $this->assertNotEmpty($fresh->member_code);
-        $this->assertIsInt($fresh->member_since);
+        // Kolomnya DATE. Assertion lama menuntut integer dan justru mengunci
+        // bentuk yang ditolak MySQL.
+        $this->assertSame(date('Y-m-d'), $fresh->member_since);
     }
 
     public function test_join_twice_keeps_the_original_code(): void

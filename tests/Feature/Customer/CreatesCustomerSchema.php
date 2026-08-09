@@ -45,6 +45,8 @@ trait CreatesCustomerSchema
             $t->string('name')->nullable();
             $t->string('phone')->nullable();
             $t->string('email')->nullable();
+            $t->string('instagram')->nullable();
+            $t->integer('date_of_birth')->nullable();
             $t->text('address')->nullable();
             $t->text('maps')->nullable();
             $t->text('photo')->nullable();
@@ -55,7 +57,10 @@ trait CreatesCustomerSchema
             $t->string('pin_created_ip')->nullable();
             $t->tinyInteger('is_member')->default(0);
             $t->string('member_code')->nullable();
-            $t->integer('member_since')->nullable();
+            // DATE, bukan integer. Skema test yang salah tipe di sini membuat
+            // sqlite menerima unix timestamp yang ditolak MySQL produksi —
+            // bugnya lolos seluruh test dan baru muncul di server.
+            $t->date('member_since')->nullable();
             $t->integer('points')->default(0);
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();

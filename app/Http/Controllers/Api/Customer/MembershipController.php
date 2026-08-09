@@ -22,7 +22,11 @@ class MembershipController extends Controller
             $customer->update([
                 'is_member' => 1,
                 'member_code' => 'MBR'.str_pad((string) $customer->id, 6, '0', STR_PAD_LEFT),
-                'member_since' => time(),
+                // `member_since` adalah satu-satunya kolom tanggal di tabel ini
+                // yang benar-benar bertipe DATE, bukan integer unix seperti
+                // `created_at`/`modified_at`. Menulis time() ke sana ditolak
+                // MySQL: "Incorrect date value: '1786252739'".
+                'member_since' => date('Y-m-d'),
             ]);
         }
 
