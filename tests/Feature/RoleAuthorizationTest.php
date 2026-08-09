@@ -44,9 +44,17 @@ class RoleAuthorizationTest extends TestCase
             'pengerjaan' => ['get', '/api/treatments', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
             'pengiriman' => ['get', '/api/sends', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
             'bagi pekerjaan' => ['post', '/api/treatments/assign', ['Admin Super', 'Admin']],
+            // Jemput ulang dikerjakan kurir di lapangan, bukan admin di kantor.
+            'jemput ulang' => ['post', '/api/sends/1/reorder', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
+            // Barang pesanan dan daftar layanan dibuka untuk staf lapangan: kurir mencatat
+            // barang di lokasi penjemputan. Harganya dipangkas di controller, bukan di sini.
+            'barang pesanan' => ['get', '/api/orders/1/items', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
+            'simpan barang' => ['post', '/api/orders/1/items', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
+            'hapus barang' => ['delete', '/api/orders/1/items/1', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
+            'layanan' => ['get', '/api/services', ['Admin Super', 'Admin', 'Teknisi', 'Kurir']],
 
             'pesanan' => ['get', '/api/orders', ['Admin Super', 'Admin']],
-            'layanan' => ['get', '/api/services', ['Admin Super', 'Admin']],
+            'tulis layanan' => ['post', '/api/services', ['Admin Super', 'Admin']],
             'tulis kalender libur' => ['post', '/api/holidays', ['Admin Super', 'Admin']],
             'tulis cabang' => ['post', '/api/projects', ['Admin Super', 'Admin']],
 

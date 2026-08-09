@@ -30,12 +30,12 @@ trait BranchScoped
             }
 
             // Branch users only see their branch data
-            $builder->where($builder->getModel()->getTable() . '.projects_id', $activeBranch);
+            $builder->where($builder->getModel()->getTable().'.projects_id', $activeBranch);
         });
 
         // Auto-assign projects_id when creating new records
         static::creating(function ($model) {
-            if (!isset($model->projects_id)) {
+            if (! isset($model->projects_id)) {
                 $activeBranch = app('branch.context')->getActiveBranch();
 
                 // Only auto-assign if user has a branch (not super admin)
@@ -60,6 +60,6 @@ trait BranchScoped
     public function scopeForBranch(Builder $query, ?int $branchId): Builder
     {
         return $query->withoutGlobalScope('branch')
-            ->when($branchId !== null, fn($q) => $q->where('projects_id', $branchId));
+            ->when($branchId !== null, fn ($q) => $q->where('projects_id', $branchId));
     }
 }

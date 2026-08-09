@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Send;
 use App\Models\User;
 use App\Services\FcmService;
+use App\Services\ReportCacheService;
 use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -707,6 +708,81 @@ class SendController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * POST /api/sends/{id}/reorder
+     * Jemput ulang: kurir di lapangan menemukan barang yang perlu dijemput lagi. Dari satu
+     * baris `sends` yang sudah ada, dibuatkan pesanan baru sekalian tugas jemputnya.
+     *
+     * Pelanggannya ditelusuri sendiri lewat sends -> orders -> customers. Klien tidak
+     * mengirim `customers_id`, `users_id`, maupun `projects_id`: kurirnya adalah pemegang
+     * token, cabangnya ditentukan BranchScoped. Kodenya memakai generator yang sama dengan
+     * layar pesanan (Order::generateCode) — dua generator berarti dua invoice bisa memakai
+     * nomor yang sama.
+     */
+    public function reorder(Request $request, $id)
+    {
+        $send = Send::with('order')->findOrFail($id);
+        $customersId = $send->order->customers_id ?? null;
+
+        if (! $customersId) {
+            return response()->json([
+                'message' => 'Pengiriman ini tidak terhubung ke pelanggan mana pun.',
+            ], 422);
+        }
+
+        $user = $request->user();
+
+        // Pesanan tanpa tugas jemput adalah pesanan hantu: tidak muncul di waiting list mana
+        // pun dan tidak ada yang menjemputnya. Keduanya jadi satu transaksi.
+        DB::beginTransaction();
+        try {
+            $order = Order::create([
+                'customers_id' => $customersId,
+                'code' => Order::generateCode(),
+                'date' => time(),
+                'total_price' => 0,
+                'total_discount' => 0,
+                'status' => 0, // pending
+                'created_by' => $user->id,
+            ]);
+
+            // type 0 = jemput; 1 = antar (lihat index() dan markAsCompleted()).
+            $jemput = Send::create([
+                'orders_id' => $order->id,
+                'users_id' => $user->id,
+                'date' => time(),
+                'status' => 0, // belum selesai
+                'type' => 0,
+                'created_by' => $user->id,
+            ]);
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Gagal membuat pesanan jemput ulang',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+
+        ReportCacheService::invalidate(['sales', 'orders', 'receivables', 'customers']);
+
+        return response()->json([
+            'message' => 'Pesanan jemput ulang berhasil dibuat',
+            'data' => [
+                'orders_id' => $order->id,
+                'order_code' => $order->code,
+                'customers_id' => (int) $customersId,
+                'sends_id' => $jemput->id,
+                'users_id' => $jemput->users_id,
+                'date' => $jemput->date,
+                'type' => $jemput->type,
+                'status' => $jemput->status,
+            ],
+        ], 201);
     }
 
     /**

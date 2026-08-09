@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Model;
 
 class Send extends Model
 {
     use BranchScoped;
 
     protected $table = 'sends';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     protected $fillable = [

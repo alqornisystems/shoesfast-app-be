@@ -63,6 +63,13 @@ class AuthController extends Controller
             'name' => $customer->name,
             'phone' => $customer->phone,
             'email' => $customer->email,
+            'instagram' => $customer->instagram,
+            'date_of_birth' => $customer->date_of_birth !== null ? (int) $customer->date_of_birth : null,
+            // Kolomnya menyimpan dua bentuk: URL absolut milik data lama, dan
+            // data URL base64 untuk unggahan baru dari panel admin maupun
+            // portal. Keduanya sama-sama bisa dipasang langsung di <img>,
+            // jadi diteruskan apa adanya.
+            'photo' => $customer->photo,
             'address' => $customer->address,
             'maps' => $customer->maps,
             'latitude' => $customer->latitude,

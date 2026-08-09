@@ -63,6 +63,31 @@ class Order extends Model
     }
 
     /**
+     * Kode invoice berikutnya. Format: INV{YYYYMM}{0001}, urut per bulan.
+     *
+     * Tinggal di model, bukan di OrderController, karena pesanan sekarang lahir dari dua
+     * tempat: layar admin dan jemput ulang kurir (SendController::reorder). Dua generator
+     * berarti dua invoice bisa memakai nomor yang sama.
+     *
+     * Pencarian nomor terakhir sengaja MELEWATI branch scope: kalau tidak, cabang B yang
+     * belum punya pesanan bulan ini akan mulai lagi dari 0001 dan menabrak kode cabang A.
+     */
+    public static function generateCode(): string
+    {
+        $prefix = 'INV';
+        $yearMonth = date('Ym');
+
+        $lastOrder = static::withoutGlobalScope('branch')
+            ->where('code', 'LIKE', "{$prefix}{$yearMonth}%")
+            ->orderBy('code', 'DESC')
+            ->first();
+
+        $newNumber = $lastOrder ? ((int) substr($lastOrder->code, -4)) + 1 : 1;
+
+        return $prefix.$yearMonth.str_pad((string) $newNumber, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
      * Relationship to Customer
      */
     public function customer()

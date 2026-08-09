@@ -14,9 +14,7 @@ use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
-    public function __construct(protected WhatsAppService $whatsapp)
-    {
-    }
+    public function __construct(protected WhatsAppService $whatsapp) {}
 
     /**
      * Wablas incoming-message webhook.
@@ -27,10 +25,11 @@ class WebhookController extends Controller
         // Verifikasi secret opsional (jika WABLAS_WEBHOOK_SECRET diset) — Wablas bisa
         // mengirimkannya lewat query param ?secret= atau field payload.
         $secret = config('services.wablas.webhook_secret');
-        if (!empty($secret)) {
+        if (! empty($secret)) {
             $provided = (string) ($request->query('secret') ?? data_get($request->all(), 'secret', ''));
-            if (!hash_equals((string) $secret, $provided)) {
+            if (! hash_equals((string) $secret, $provided)) {
                 Log::warning('Wablas webhook secret mismatch');
+
                 return response()->json(['success' => false, 'message' => 'Invalid secret'], 401);
             }
         }
@@ -69,7 +68,7 @@ class WebhookController extends Controller
             $today = date('Y-m-d');
 
             // Hanya proses pesan teks individual (bukan grup) dengan pengirim valid
-            if ($phone !== '' && $messageType === 'text' && !$isGroup) {
+            if ($phone !== '' && $messageType === 'text' && ! $isGroup) {
                 // Normalize phone number
                 $normalizedPhone = $this->normalizePhone($phone);
 
@@ -84,7 +83,7 @@ class WebhookController extends Controller
                     DB::beginTransaction();
                     try {
                         // Auto-register customer if not exists
-                        if (!$customer) {
+                        if (! $customer) {
                             $customer = $this->autoRegisterCustomer($normalizedPhone, $orderData);
                         }
 
@@ -95,15 +94,15 @@ class WebhookController extends Controller
 
                         // Send confirmation message
                         $confirmMessage = "✅ *Pesanan kamu sudah tercatat!*\n\n"
-                            . "No. Invoice: *{$order->code}*\n\n"
-                            . "📋 *Detail:*\n"
-                            . "• Nama: {$customer->name}\n"
-                            . "• Barang: " . ($orderData['items'] ?? 'Belum diisi') . "\n"
-                            . "• Alamat: " . ($orderData['address'] ?? 'Belum diisi') . "\n\n"
-                            . "📌 *Status:* Menunggu konfirmasi admin\n\n"
-                            . "Simpan nomor invoice di atas ya kak. Admin kami akan segera menghubungi untuk konfirmasi pickup & pembayaran. 😊\n\n"
-                            . "💰 Untuk transaksi di bawah Rp 500.000, pembayaran wajib di awal ya!\n\n"
-                            . "- *SHOESFAST* -";
+                            ."No. Invoice: *{$order->code}*\n\n"
+                            ."📋 *Detail:*\n"
+                            ."• Nama: {$customer->name}\n"
+                            .'• Barang: '.($orderData['items'] ?? 'Belum diisi')."\n"
+                            .'• Alamat: '.($orderData['address'] ?? 'Belum diisi')."\n\n"
+                            ."📌 *Status:* Menunggu konfirmasi admin\n\n"
+                            ."Simpan nomor invoice di atas ya kak. Admin kami akan segera menghubungi untuk konfirmasi pickup & pembayaran. 😊\n\n"
+                            ."💰 Untuk transaksi di bawah Rp 500.000, pembayaran wajib di awal ya!\n\n"
+                            .'- *SHOESFAST* -';
 
                         $this->sendWhatsAppMessage($phone, $confirmMessage);
 
@@ -125,8 +124,8 @@ class WebhookController extends Controller
 
                         // Send error message to customer
                         $errorMessage = "❌ Maaf, terjadi kesalahan saat memproses order Anda.\n\n"
-                            . "Silakan hubungi admin kami langsung untuk bantuan lebih lanjut. 🙏\n\n"
-                            . "- *SHOESFAST* -";
+                            ."Silakan hubungi admin kami langsung untuk bantuan lebih lanjut. 🙏\n\n"
+                            .'- *SHOESFAST* -';
 
                         $this->sendWhatsAppMessage($phone, $errorMessage);
 
@@ -139,20 +138,20 @@ class WebhookController extends Controller
                     ->where('date', $today)
                     ->first();
 
-                if (!$offlineLog) {
+                if (! $offlineLog) {
                     // Cek libur dari fitur Holiday (tabel holidays) untuk tanggal hari ini
                     $todayStart = strtotime($today);
-                    $todayEnd = strtotime($today . ' 23:59:59');
+                    $todayEnd = strtotime($today.' 23:59:59');
                     $holiday = Holiday::withoutBranchScope()
                         ->whereBetween('date', [$todayStart, $todayEnd])
                         ->first();
 
                     if ($holiday) {
                         $holidayMessage = "Halo Sobat *SHOESFAST* 👋🏻\n\n"
-                            . "Terima kasih sudah menghubungi kami! 🤗\n\n"
-                            . "Saat ini kami sedang *LIBUR* — {$holiday->name}. 🗓️\n\n"
-                            . "📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas setelah kami kembali aktif. 🙏😊\n\n"
-                            . "- *SHOESFAST* -";
+                            ."Terima kasih sudah menghubungi kami! 🤗\n\n"
+                            ."Saat ini kami sedang *LIBUR* — {$holiday->name}. 🗓️\n\n"
+                            ."📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas setelah kami kembali aktif. 🙏😊\n\n"
+                            .'- *SHOESFAST* -';
 
                         $this->sendOfflineMessage($normalizedPhone, $holidayMessage, $today);
 
@@ -166,13 +165,13 @@ class WebhookController extends Controller
                     // Check if Sunday (day off)
                     if ($currentDay == 0) {
                         $sundayMessage = "Halo Sobat *SHOESFAST* 👋🏻\n\n"
-                            . "Terima kasih sudah menghubungi kami! 🤗\n\n"
-                            . "Saat ini kami sedang *LIBUR* karena hari Minggu ⏳. "
-                            . "Mohon maaf jika respon kami lebih lambat dari biasanya. 🙏\n\n"
-                            . "📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas secepatnya saat tim kami kembali aktif. "
-                            . "Terima kasih atas kesabaran dan pengertiannya! 😊\n\n"
-                            . "- *SHOESFAST* -\n"
-                            . "Pesan sambil tiduran 😊";
+                            ."Terima kasih sudah menghubungi kami! 🤗\n\n"
+                            .'Saat ini kami sedang *LIBUR* karena hari Minggu ⏳. '
+                            ."Mohon maaf jika respon kami lebih lambat dari biasanya. 🙏\n\n"
+                            .'📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas secepatnya saat tim kami kembali aktif. '
+                            ."Terima kasih atas kesabaran dan pengertiannya! 😊\n\n"
+                            ."- *SHOESFAST* -\n"
+                            .'Pesan sambil tiduran 😊';
 
                         $this->sendOfflineMessage($normalizedPhone, $sundayMessage, $today);
 
@@ -185,13 +184,13 @@ class WebhookController extends Controller
                     // Check if outside office hours (08:00 - 15:00 WIB)
                     if ($currentHour < 8 || $currentHour >= 15) {
                         $offlineMessage = "Halo Sobat *SHOESFAST* 👋🏻\n\n"
-                            . "Terima kasih sudah menghubungi kami! 🤗\n\n"
-                            . "Saat ini kami sedang di luar jam operasional ⏳, yaitu *08:00 - 15:00 WIB*. "
-                            . "Mohon maaf jika respon kami lebih lambat dari biasanya. 🙏\n\n"
-                            . "📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas secepatnya saat tim kami kembali aktif. "
-                            . "Terima kasih atas kesabaran dan pengertiannya! 😊\n\n"
-                            . "- *SHOESFAST* -\n"
-                            . "Pesan sambil tiduran 😊";
+                            ."Terima kasih sudah menghubungi kami! 🤗\n\n"
+                            .'Saat ini kami sedang di luar jam operasional ⏳, yaitu *08:00 - 15:00 WIB*. '
+                            ."Mohon maaf jika respon kami lebih lambat dari biasanya. 🙏\n\n"
+                            .'📌 *Pesan kamu sudah masuk dalam antrian* dan akan kami balas secepatnya saat tim kami kembali aktif. '
+                            ."Terima kasih atas kesabaran dan pengertiannya! 😊\n\n"
+                            ."- *SHOESFAST* -\n"
+                            .'Pesan sambil tiduran 😊';
 
                         $this->sendOfflineMessage($normalizedPhone, $offlineMessage, $today);
 
@@ -277,8 +276,8 @@ class WebhookController extends Controller
     private function parseOrderForm(string $message): ?array
     {
         // Check if message contains form keywords
-        if (!str_contains(mb_strtolower($message), 'nama') ||
-            !str_contains(mb_strtolower($message), ':')) {
+        if (! str_contains(mb_strtolower($message), 'nama') ||
+            ! str_contains(mb_strtolower($message), ':')) {
             return null;
         }
 
@@ -287,7 +286,9 @@ class WebhookController extends Controller
 
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line)) continue;
+            if (empty($line)) {
+                continue;
+            }
 
             // Parse key-value pairs
             if (str_contains($line, ':')) {
@@ -296,7 +297,9 @@ class WebhookController extends Controller
                 $value = trim($value);
 
                 // Skip if value is empty
-                if (empty($value)) continue;
+                if (empty($value)) {
+                    continue;
+                }
 
                 // Map keys to data array
                 if (str_contains($key, 'nama')) {
@@ -364,20 +367,20 @@ class WebhookController extends Controller
     {
         $notes = [];
 
-        if (!empty($orderData['instagram'])) {
+        if (! empty($orderData['instagram'])) {
             $notes[] = "Instagram: {$orderData['instagram']}";
         }
 
-        if (!empty($orderData['whatsapp'])) {
+        if (! empty($orderData['whatsapp'])) {
             $notes[] = "WhatsApp Form: {$orderData['whatsapp']}";
         }
 
-        if (!empty($orderData['items'])) {
+        if (! empty($orderData['items'])) {
             $notes[] = "Barang yang diminta: {$orderData['items']}";
         }
 
-        $notes[] = "Sumber: WhatsApp Auto-Register";
-        $notes[] = "Tanggal: " . date('Y-m-d H:i:s');
+        $notes[] = 'Sumber: WhatsApp Auto-Register';
+        $notes[] = 'Tanggal: '.date('Y-m-d H:i:s');
 
         return implode("\n", $notes);
     }
@@ -393,14 +396,14 @@ class WebhookController extends Controller
 
             // Build order note
             $note = "Order dari WhatsApp\n";
-            if (!empty($orderData['items'])) {
+            if (! empty($orderData['items'])) {
                 $note .= "Barang: {$orderData['items']}\n";
             }
-            if (!empty($orderData['instagram'])) {
+            if (! empty($orderData['instagram'])) {
                 $note .= "Instagram: {$orderData['instagram']}\n";
             }
             $note .= "Jam operasional kurir: 14.00-17.00\n";
-            $note .= "Pembayaran wajib di awal (transaksi < Rp 500.000)";
+            $note .= 'Pembayaran wajib di awal (transaksi < Rp 500.000)';
 
             $order = Order::create([
                 'customers_id' => $customer->id,
@@ -456,6 +459,6 @@ class WebhookController extends Controller
             $newNumber = 1;
         }
 
-        return $prefix . $yearMonth . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+        return $prefix.$yearMonth.str_pad($newNumber, 4, '0', STR_PAD_LEFT);
     }
 }

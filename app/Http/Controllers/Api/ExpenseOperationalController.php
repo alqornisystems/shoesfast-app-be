@@ -15,13 +15,14 @@ class ExpenseOperationalController extends Controller
         $query = ExpenseOperational::with('project')->orderBy('id', 'DESC');
 
         if ($request->has('search') && $request->search !== '') {
-            $query->where(function($q) use ($request) {
+            $query->where(function ($q) use ($request) {
                 $q->where('name', 'LIKE', "%{$request->search}%")
-                  ->orWhere('note', 'LIKE', "%{$request->search}%");
+                    ->orWhere('note', 'LIKE', "%{$request->search}%");
             });
         }
 
         $perPage = $request->get('per_page', 15);
+
         return response()->json($query->paginate($perPage));
     }
 
@@ -56,6 +57,7 @@ class ExpenseOperationalController extends Controller
             return response()->json(['message' => 'Pengeluaran operasional berhasil ditambahkan', 'data' => $expense], 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'Gagal menambahkan pengeluaran', 'error' => $e->getMessage()], 500);
         }
     }

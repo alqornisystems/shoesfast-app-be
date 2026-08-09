@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Model;
 
 class ExpenseOperational extends Model
 {
     use BranchScoped;
 
     protected $table = 'expenses_oprationals';
+
     protected $dateFormat = 'U';
 
     protected $fillable = [

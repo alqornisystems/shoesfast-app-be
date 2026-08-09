@@ -16,8 +16,11 @@ use Illuminate\Support\Facades\Log;
 class WhatsAppService
 {
     protected string $baseUrl;
+
     protected string $token;
+
     protected string $secret;
+
     protected bool $enabled;
 
     public function __construct()
@@ -42,13 +45,15 @@ class WhatsAppService
      */
     public function sendMessage(string $phone, string $message): array
     {
-        if (!$this->enabled) {
+        if (! $this->enabled) {
             Log::info('WhatsApp (Wablas) disabled. Message not sent.', ['phone' => $phone]);
+
             return ['status' => 'disabled', 'message' => 'WhatsApp is disabled'];
         }
 
         if (empty($this->baseUrl) || empty($this->token)) {
             Log::error('Wablas not configured (url/token missing)');
+
             return ['status' => 'error', 'message' => 'WhatsApp not configured'];
         }
 
@@ -67,13 +72,16 @@ class WhatsAppService
 
             if ($ok) {
                 Log::info('WhatsApp message sent (Wablas)', ['phone' => $to, 'status' => $response->status()]);
+
                 return ['status' => 'success', 'phone' => $to, 'response' => $result];
             }
 
             Log::error('Wablas API error', ['phone' => $to, 'status' => $response->status(), 'response' => $result]);
+
             return ['status' => 'failed', 'phone' => $to, 'response' => $result];
         } catch (\Exception $e) {
             Log::error('WhatsApp send failed (Wablas)', ['phone' => $to, 'error' => $e->getMessage()]);
+
             return ['status' => 'error', 'phone' => $to, 'message' => $e->getMessage()];
         }
     }
@@ -81,12 +89,13 @@ class WhatsAppService
     /**
      * Kirim pesan ke banyak penerima (satu-per-satu dengan jeda kecil).
      *
-     * @param array<int, array{phone: string, message: string}> $recipients
+     * @param  array<int, array{phone: string, message: string}>  $recipients
      */
     public function sendBulkMessages(array $recipients): array
     {
-        if (!$this->enabled) {
+        if (! $this->enabled) {
             Log::info('WhatsApp (Wablas) disabled. Bulk messages not sent.', ['count' => count($recipients)]);
+
             return ['status' => 'disabled', 'message' => 'WhatsApp is disabled'];
         }
 
@@ -97,6 +106,7 @@ class WhatsAppService
 
             if (empty($phone) || empty($message)) {
                 $results[] = ['status' => 'error', 'phone' => $phone, 'message' => 'Empty phone/message'];
+
                 continue;
             }
 
@@ -115,8 +125,8 @@ class WhatsAppService
         $phone = preg_replace('/\D/', '', $phone);
         $phone = ltrim($phone, '0');
 
-        if (!str_starts_with($phone, '62')) {
-            $phone = '62' . $phone;
+        if (! str_starts_with($phone, '62')) {
+            $phone = '62'.$phone;
         }
 
         return $phone;
@@ -127,7 +137,7 @@ class WhatsAppService
      */
     public function isEnabled(): bool
     {
-        return $this->enabled && !empty($this->baseUrl) && !empty($this->token);
+        return $this->enabled && ! empty($this->baseUrl) && ! empty($this->token);
     }
 
     // ---------------------------------------------------------------------
@@ -142,7 +152,7 @@ class WhatsAppService
         return [
             'driver' => 'wablas',
             'enabled' => $this->enabled,
-            'configured' => !empty($this->baseUrl) && !empty($this->token),
+            'configured' => ! empty($this->baseUrl) && ! empty($this->token),
             'base_url' => $this->baseUrl,
         ];
     }
@@ -166,7 +176,7 @@ class WhatsAppService
      */
     public function getDeviceStatus(): array
     {
-        if (!$this->enabled) {
+        if (! $this->enabled) {
             return ['ok' => false, 'reason' => 'disabled', 'message' => 'WhatsApp (Wablas) dinonaktifkan.'];
         }
         if (empty($this->baseUrl) || empty($this->token)) {
@@ -190,6 +200,7 @@ class WhatsAppService
             ];
         } catch (\Exception $e) {
             Log::warning('Wablas device info failed', ['error' => $e->getMessage()]);
+
             return ['ok' => false, 'reason' => 'unreachable', 'message' => 'Tidak dapat terhubung ke server Wablas.'];
         }
     }

@@ -14,8 +14,11 @@ class ServiceHpp extends Model
 
     // Existing DB uses Unix integer timestamps
     protected $dateFormat = 'U';
+
     public $timestamps = true;
+
     const CREATED_AT = 'created_at';
+
     const UPDATED_AT = 'modified_at';
 
     protected $fillable = [

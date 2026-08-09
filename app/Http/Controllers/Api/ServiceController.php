@@ -21,13 +21,25 @@ class ServiceController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
         // Pagination
         $perPage = $request->get('per_page', 25);
         $services = $query->orderBy('id', 'desc')->paginate($perPage);
+
+        // Teknisi dan kurir membaca daftar ini untuk memilih pengerjaan saat mencatat barang
+        // di lokasi penjemputan — mereka butuh nama dan estimasi, bukan harga jual apalagi HPP.
+        if (! $this->isAdmin($request)) {
+            $services->getCollection()->transform(fn ($service) => [
+                'id' => $service->id,
+                'name' => $service->name,
+                'estimation' => $service->estimation,
+                'photo' => $service->photo,
+                'description' => $service->description,
+            ]);
+        }
 
         return response()->json($services);
     }
@@ -57,7 +69,7 @@ class ServiceController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -65,7 +77,7 @@ class ServiceController extends Controller
 
         return response()->json([
             'message' => 'Service created successfully',
-            'data' => $service
+            'data' => $service,
         ], 201);
     }
 
@@ -75,6 +87,7 @@ class ServiceController extends Controller
     public function show($id)
     {
         $service = Service::findOrFail($id);
+
         return response()->json(['data' => $service]);
     }
 
@@ -105,7 +118,7 @@ class ServiceController extends Controller
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -113,7 +126,7 @@ class ServiceController extends Controller
 
         return response()->json([
             'message' => 'Service updated successfully',
-            'data' => $service
+            'data' => $service,
         ]);
     }
 
@@ -126,7 +139,7 @@ class ServiceController extends Controller
         $service->delete(); // Soft delete via is_deleted = 1
 
         return response()->json([
-            'message' => 'Service deleted successfully'
+            'message' => 'Service deleted successfully',
         ]);
     }
 }

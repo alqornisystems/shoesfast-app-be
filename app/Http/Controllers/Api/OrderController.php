@@ -207,7 +207,7 @@ class OrderController extends Controller
         DB::beginTransaction();
         try {
             // Generate order code
-            $code = $this->generateOrderCode();
+            $code = Order::generateCode();
 
             // Calculate total price from items (default 0 jika tidak ada items)
             $totalPrice = 0;
@@ -453,20 +453,26 @@ class OrderController extends Controller
 
     /**
      * Get order items
+     *
+     * Terbuka untuk teknisi dan kurir: mereka mencatat dan memeriksa barang di lokasi
+     * penjemputan. Tapi angka rupiah dipangkas untuk jabatan lapangan — `price` dan
+     * `discount`, baik di barang maupun di pengerjaannya, hanya ikut untuk admin. Membuka
+     * rutenya apa adanya akan menyerahkan seluruh nilai pesanan ke perangkat lapangan.
      */
-    public function getItems($orderId)
+    public function getItems(Request $request, $orderId)
     {
+        $isAdmin = $this->isAdmin($request);
+
         $items = OrderItem::with(['treatments.service', 'treatments.user'])
             ->where('orders_id', $orderId)
             ->get();
 
-        $items->transform(function ($item) {
-            $treatments = $item->treatments->map(function ($treatment) {
-                return [
+        $items->transform(function ($item) use ($isAdmin) {
+            $treatments = $item->treatments->map(function ($treatment) use ($isAdmin) {
+                $data = [
                     'id' => $treatment->id,
                     'services_id' => $treatment->services_id,
                     'name' => $treatment->service ? $treatment->service->name : null,
-                    'price' => $treatment->price,
                     'estimation' => $treatment->service ? $treatment->service->estimation : null,
                     'date_start' => $treatment->date_start,
                     'date_end' => $treatment->date_end,
@@ -474,6 +480,12 @@ class OrderController extends Controller
                     'users_id' => $treatment->users_id,
                     'users_name' => $treatment->user ? $treatment->user->name : null,
                 ];
+
+                if ($isAdmin) {
+                    $data['price'] = $treatment->price;
+                }
+
+                return $data;
             });
 
             // Convert photo path to full URL
@@ -488,12 +500,10 @@ class OrderController extends Controller
                 }
             }
 
-            return [
+            $data = [
                 'id' => $item->id,
                 'photo' => $photoUrl,
                 'name' => $item->name,
-                'price' => $item->price,
-                'discount' => $item->discount,
                 'status' => $item->status,
                 'type' => $item->type,
                 'checkbox' => $item->checkbox,
@@ -501,6 +511,13 @@ class OrderController extends Controller
                 'note' => $item->note,
                 'treatments' => $treatments,
             ];
+
+            if ($isAdmin) {
+                $data['price'] = $item->price;
+                $data['discount'] = $item->discount;
+            }
+
+            return $data;
         });
 
         return response()->json($items);
@@ -511,10 +528,13 @@ class OrderController extends Controller
      */
     public function saveItem(Request $request, $orderId)
     {
+        $isAdmin = $this->isAdmin($request);
+        $wajibHarga = $isAdmin ? 'required' : 'nullable';
+
         $validated = $request->validate([
             'id' => 'nullable|exists:orders_items,id',
             'name' => 'required|string|max:100',
-            'price' => 'required|integer|min:0',
+            'price' => $wajibHarga.'|integer|min:0',
             'discount' => 'nullable|integer|min:0',
             'type' => 'required|integer|in:0,1,2',
             'photo' => 'nullable|string',
@@ -523,8 +543,22 @@ class OrderController extends Controller
             'services' => 'nullable|array',
             'services.*.id' => 'nullable|exists:treatments,id',
             'services.*.services_id' => 'required|exists:services,id',
-            'services.*.price' => 'required|integer|min:0',
+            'services.*.price' => $wajibHarga.'|integer|min:0',
         ]);
+
+        // Kurir dan teknisi mencatat barang di lokasi tapi tidak pernah melihat harga, jadi
+        // harga tidak boleh datang dari perangkat lapangan: apa pun yang dikirim ditimpa
+        // dengan harga master layanan yang dipilih. Kalau tidak, satu perangkat lapangan
+        // bisa menentukan sendiri nilai pesanan.
+        if (! $isAdmin) {
+            foreach ($validated['services'] ?? [] as $i => $serviceData) {
+                $service = \App\Models\Service::find($serviceData['services_id']);
+                $validated['services'][$i]['price'] = (int) ($service->price ?? 0);
+            }
+
+            $validated['price'] = array_sum(array_column($validated['services'] ?? [], 'price'));
+            $validated['discount'] = 0;
+        }
 
         DB::beginTransaction();
         try {
@@ -785,32 +819,6 @@ class OrderController extends Controller
                 'date' => $order->date,
             ];
         }));
-    }
-
-    /**
-     * Generate unique order code
-     * Format: INV{YYYYMM}{0001}
-     * Example: INV2026030001
-     */
-    private function generateOrderCode()
-    {
-        $prefix = 'INV';
-        $yearMonth = date('Ym'); // YYYYMM format
-
-        // Get last order code for this month
-        $lastOrder = Order::where('code', 'LIKE', "{$prefix}{$yearMonth}%")
-            ->orderBy('code', 'DESC')
-            ->first();
-
-        if ($lastOrder) {
-            // Extract last 4 digits
-            $lastNumber = (int) substr($lastOrder->code, -4);
-            $newNumber = $lastNumber + 1;
-        } else {
-            $newNumber = 1;
-        }
-
-        return $prefix.$yearMonth.str_pad($newNumber, 4, '0', STR_PAD_LEFT);
     }
 
     /**

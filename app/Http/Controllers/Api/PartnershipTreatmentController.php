@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Treatment;
 use App\Models\Partnership;
+use App\Models\Treatment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -24,10 +24,10 @@ class PartnershipTreatmentController extends Controller
             'orderItem.order.customer',
             'partnership',
         ])
-        ->where('partnerships_id', $partnershipId)
-        ->whereHas('orderItem.order', function ($q) {
-            $q->where('status', '!=', 3); // Not cancelled
-        });
+            ->where('partnerships_id', $partnershipId)
+            ->whereHas('orderItem.order', function ($q) {
+                $q->where('status', '!=', 3); // Not cancelled
+            });
 
         // Filter by status
         $status = $request->get('status', 'in_progress');
@@ -35,13 +35,13 @@ class PartnershipTreatmentController extends Controller
         if ($status === 'in_progress') {
             // In progress: assigned to partnership, not completed
             $query->where('status', '!=', 2)
-                  ->whereNull('done_at')
-                  ->orderBy('date_end', 'ASC'); // Sort by deadline (earliest first)
+                ->whereNull('done_at')
+                ->orderBy('date_end', 'ASC'); // Sort by deadline (earliest first)
         } elseif ($status === 'completed') {
             // History: completed
             $query->where('status', 2)
-                  ->whereNotNull('done_at')
-                  ->orderBy('done_at', 'DESC');
+                ->whereNotNull('done_at')
+                ->orderBy('done_at', 'DESC');
         }
 
         // Search
@@ -51,12 +51,12 @@ class PartnershipTreatmentController extends Controller
                 $q->whereHas('orderItem.order.customer', function ($qCustomer) use ($search) {
                     $qCustomer->where('name', 'LIKE', "%{$search}%");
                 })
-                ->orWhereHas('orderItem', function ($qItem) use ($search) {
-                    $qItem->where('name', 'LIKE', "%{$search}%");
-                })
-                ->orWhereHas('orderItem.order', function ($qOrder) use ($search) {
-                    $qOrder->where('code', 'LIKE', "%{$search}%");
-                });
+                    ->orWhereHas('orderItem', function ($qItem) use ($search) {
+                        $qItem->where('name', 'LIKE', "%{$search}%");
+                    })
+                    ->orWhereHas('orderItem.order', function ($qOrder) use ($search) {
+                        $qOrder->where('code', 'LIKE', "%{$search}%");
+                    });
             });
         }
 
@@ -134,12 +134,12 @@ class PartnershipTreatmentController extends Controller
             }
 
             // If marking as done (status = 2)
-            if ($validated['status'] == 2 && !$treatment->done_at) {
+            if ($validated['status'] == 2 && ! $treatment->done_at) {
                 $updateData['done_at'] = time();
             }
 
             // If marking as in progress (status = 1) and date_start not set
-            if ($validated['status'] == 1 && !$treatment->date_start) {
+            if ($validated['status'] == 1 && ! $treatment->date_start) {
                 $updateData['date_start'] = time();
             }
 
@@ -147,7 +147,7 @@ class PartnershipTreatmentController extends Controller
 
             DB::commit();
 
-            $statusText = match($validated['status']) {
+            $statusText = match ($validated['status']) {
                 0 => 'Menunggu',
                 1 => 'Sedang Dikerjakan',
                 2 => 'Selesai',
@@ -159,6 +159,7 @@ class PartnershipTreatmentController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'message' => 'Gagal update status',
                 'error' => $e->getMessage(),
@@ -180,9 +181,9 @@ class PartnershipTreatmentController extends Controller
             'orderItem.order.customer',
             'partnership',
         ])
-        ->where('id', $treatmentId)
-        ->where('partnerships_id', $partnershipId)
-        ->firstOrFail();
+            ->where('id', $treatmentId)
+            ->where('partnerships_id', $partnershipId)
+            ->firstOrFail();
 
         $dateEnd = $treatment->date_end ?: strtotime("+{$treatment->service->estimation} day", $treatment->date_start);
 
@@ -257,7 +258,7 @@ class PartnershipTreatmentController extends Controller
                 'name' => $partnership->name,
                 'address' => $partnership->address,
                 'phone' => $partnership->phone,
-            ]
+            ],
         ]);
     }
 

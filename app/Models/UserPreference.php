@@ -18,6 +18,7 @@ class UserPreference extends Model
     public $timestamps = true;
 
     const CREATED_AT = 'created_at';
+
     const UPDATED_AT = 'modified_at';
 
     /**

@@ -16,7 +16,7 @@ class UserController extends Controller
      */
     private function normalizePhone(?string $phone): ?string
     {
-        if (!$phone) {
+        if (! $phone) {
             return null;
         }
 
@@ -42,18 +42,18 @@ class UserController extends Controller
 
         $users->getCollection()->transform(function ($user) {
             return [
-                'id'             => $user->id,
-                'name'           => $user->name,
-                'email'          => $user->email,
-                'phone'          => $user->phone,
-                'photo'          => $user->photo,
-                'roles_id'       => $user->roles_id,
-                'role_name'      => $user->role?->name,
-                'projects_id'    => $user->projects_id,
-                'project_name'   => $user->project?->name,
-                'payment_date'   => $user->payment_date,
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'photo' => $user->photo,
+                'roles_id' => $user->roles_id,
+                'role_name' => $user->role?->name,
+                'projects_id' => $user->projects_id,
+                'project_name' => $user->project?->name,
+                'payment_date' => $user->payment_date,
                 'account_number' => $user->account_number,
-                'created_at'     => $user->created_at,
+                'created_at' => $user->created_at,
             ];
         });
 
@@ -64,34 +64,34 @@ class UserController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'name'           => ['required', 'string', 'max:100'],
-            'email'          => ['required', 'email', 'max:50', Rule::unique('users')->where('is_deleted', 0)],
-            'phone'          => ['nullable', 'string', 'max:25'],
-            'password'       => ['required', 'string', 'min:6'],
-            'photo'          => ['nullable', 'string'],
-            'roles_id'       => ['required', 'exists:roles,id'],
-            'projects_id'    => ['nullable', 'exists:projects,id'],
-            'payment_date'   => ['nullable', 'integer', 'min:1', 'max:31'],
+            'name' => ['required', 'string', 'max:100'],
+            'email' => ['required', 'email', 'max:50', Rule::unique('users')->where('is_deleted', 0)],
+            'phone' => ['nullable', 'string', 'max:25'],
+            'password' => ['required', 'string', 'min:6'],
+            'photo' => ['nullable', 'string'],
+            'roles_id' => ['required', 'exists:roles,id'],
+            'projects_id' => ['nullable', 'exists:projects,id'],
+            'payment_date' => ['nullable', 'integer', 'min:1', 'max:31'],
             'account_number' => ['nullable', 'integer'],
         ]);
 
         $user = User::create([
-            'name'           => $validated['name'],
-            'email'          => $validated['email'],
-            'phone'          => $this->normalizePhone($validated['phone'] ?? null),
-            'password'       => Hash::make($validated['password']),
-            'photo'          => $validated['photo'] ?? null,
-            'roles_id'       => $validated['roles_id'],
-            'projects_id'    => $validated['projects_id'] ?? null,
-            'payment_date'   => $validated['payment_date'] ?? null,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $this->normalizePhone($validated['phone'] ?? null),
+            'password' => Hash::make($validated['password']),
+            'photo' => $validated['photo'] ?? null,
+            'roles_id' => $validated['roles_id'],
+            'projects_id' => $validated['projects_id'] ?? null,
+            'payment_date' => $validated['payment_date'] ?? null,
             'account_number' => $validated['account_number'] ?? null,
-            'created_by'     => auth()->id() ?? 1,
-            'modified_by'    => auth()->id() ?? 1,
+            'created_by' => auth()->id() ?? 1,
+            'modified_by' => auth()->id() ?? 1,
         ]);
 
         return response()->json([
             'message' => 'Karyawan berhasil ditambahkan.',
-            'data'    => $user->load('role'),
+            'data' => $user->load('role'),
         ], 201);
     }
 
@@ -102,18 +102,18 @@ class UserController extends Controller
 
         return response()->json([
             'data' => [
-                'id'             => $user->id,
-                'name'           => $user->name,
-                'email'          => $user->email,
-                'phone'          => $user->phone,
-                'photo'          => $user->photo,
-                'roles_id'       => $user->roles_id,
-                'role_name'      => $user->role?->name,
-                'projects_id'    => $user->projects_id,
-                'project_name'   => $user->project?->name,
-                'payment_date'   => $user->payment_date,
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'photo' => $user->photo,
+                'roles_id' => $user->roles_id,
+                'role_name' => $user->role?->name,
+                'projects_id' => $user->projects_id,
+                'project_name' => $user->project?->name,
+                'payment_date' => $user->payment_date,
                 'account_number' => $user->account_number,
-                'created_at'     => $user->created_at,
+                'created_at' => $user->created_at,
             ],
         ]);
     }
@@ -122,30 +122,30 @@ class UserController extends Controller
     public function update(Request $request, User $user): JsonResponse
     {
         $validated = $request->validate([
-            'name'           => ['required', 'string', 'max:100'],
-            'email'          => ['required', 'email', 'max:50', Rule::unique('users')->where('is_deleted', 0)->ignore($user->id)],
-            'phone'          => ['nullable', 'string', 'max:25'],
-            'password'       => ['nullable', 'string', 'min:6'],
-            'photo'          => ['nullable', 'string'],
-            'roles_id'       => ['required', 'exists:roles,id'],
-            'projects_id'    => ['nullable', 'exists:projects,id'],
-            'payment_date'   => ['nullable', 'integer', 'min:1', 'max:31'],
+            'name' => ['required', 'string', 'max:100'],
+            'email' => ['required', 'email', 'max:50', Rule::unique('users')->where('is_deleted', 0)->ignore($user->id)],
+            'phone' => ['nullable', 'string', 'max:25'],
+            'password' => ['nullable', 'string', 'min:6'],
+            'photo' => ['nullable', 'string'],
+            'roles_id' => ['required', 'exists:roles,id'],
+            'projects_id' => ['nullable', 'exists:projects,id'],
+            'payment_date' => ['nullable', 'integer', 'min:1', 'max:31'],
             'account_number' => ['nullable', 'integer'],
         ]);
 
         $data = [
-            'name'           => $validated['name'],
-            'email'          => $validated['email'],
-            'phone'          => $this->normalizePhone($validated['phone'] ?? null),
-            'roles_id'       => $validated['roles_id'],
-            'projects_id'    => $validated['projects_id'] ?? null,
-            'payment_date'   => $validated['payment_date'] ?? null,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $this->normalizePhone($validated['phone'] ?? null),
+            'roles_id' => $validated['roles_id'],
+            'projects_id' => $validated['projects_id'] ?? null,
+            'payment_date' => $validated['payment_date'] ?? null,
             'account_number' => $validated['account_number'] ?? null,
-            'modified_by'    => auth()->id() ?? 1,
+            'modified_by' => auth()->id() ?? 1,
         ];
 
         // Only update password if provided
-        if (!empty($validated['password'])) {
+        if (! empty($validated['password'])) {
             $data['password'] = Hash::make($validated['password']);
         }
 
@@ -158,7 +158,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => 'Karyawan berhasil diperbarui.',
-            'data'    => $user->fresh()->load('role'),
+            'data' => $user->fresh()->load('role'),
         ]);
     }
 

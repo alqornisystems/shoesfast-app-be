@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api\Admin;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
@@ -10,7 +10,7 @@ use App\Models\OrderItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class ClaimController extends Controller
+class GuaranteeClaimController extends Controller
 {
     private const STATUS_LABELS = [
         0 => 'Menunggu ditinjau',

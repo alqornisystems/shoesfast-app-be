@@ -60,17 +60,17 @@ class DashboardController extends Controller
         // Outstanding receivables: sum of unpaid remainder over active orders
         $receivables = (int) Order::whereIn('status', [1, 2])
             ->select(DB::raw(
-                'COALESCE(SUM(GREATEST(total_price - COALESCE((' .
-                'SELECT SUM(nominal) FROM payments ' .
-                'WHERE payments.orders_id = orders.id AND payments.is_deleted = 0' .
+                'COALESCE(SUM(GREATEST(total_price - COALESCE(('.
+                'SELECT SUM(nominal) FROM payments '.
+                'WHERE payments.orders_id = orders.id AND payments.is_deleted = 0'.
                 '), 0), 0)), 0) as receivables'
             ))
             ->value('receivables');
 
         // Top services this month (by order-item count)
         $topServices = OrderItem::whereHas('order', function ($q) use ($monthStart, $monthEnd) {
-                $q->whereBetween('date', [$monthStart, $monthEnd]);
-            })
+            $q->whereBetween('date', [$monthStart, $monthEnd]);
+        })
             ->select('name', DB::raw('COUNT(*) as count'))
             ->groupBy('name')
             ->orderByDesc('count')

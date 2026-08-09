@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class ReportCacheService
 {
@@ -33,10 +33,6 @@ class ReportCacheService
 
     /**
      * Generate cache key with user context and branch
-     *
-     * @param string $reportName
-     * @param array $params
-     * @return string
      */
     public static function generateKey(string $reportName, array $params = []): string
     {
@@ -47,7 +43,7 @@ class ReportCacheService
         ksort($params);
 
         // Remove empty values
-        $params = array_filter($params, function($value) {
+        $params = array_filter($params, function ($value) {
             return $value !== null && $value !== '';
         });
 
@@ -66,10 +62,6 @@ class ReportCacheService
     /**
      * Get cached report data or execute callback
      *
-     * @param string $reportName
-     * @param array $params
-     * @param callable $callback
-     * @param int|null $ttl
      * @return mixed
      */
     public static function remember(string $reportName, array $params, callable $callback, ?int $ttl = null)
@@ -82,21 +74,16 @@ class ReportCacheService
 
     /**
      * Clear cache for specific report
-     *
-     * @param string $reportName
-     * @param array $params
-     * @return bool
      */
     public static function forget(string $reportName, array $params = []): bool
     {
         $key = self::generateKey($reportName, $params);
+
         return Cache::forget($key);
     }
 
     /**
      * Clear all report caches for current user and branch
-     *
-     * @return void
      */
     public static function flushReportCache(): void
     {
@@ -115,7 +102,7 @@ class ReportCacheService
         $reports = [
             'sales', 'payments', 'receivables', 'orders',
             'expenses', 'hpp', 'profit-loss', 'cash-flow',
-            'treatments', 'customers', 'google-ads', 'meta-ads'
+            'treatments', 'customers', 'google-ads', 'meta-ads',
         ];
 
         foreach ($reports as $report) {
@@ -128,8 +115,7 @@ class ReportCacheService
      * Clear cache when data changes
      * Call this after create/update/delete operations
      *
-     * @param array $affectedReports List of report names affected
-     * @return void
+     * @param  array  $affectedReports  List of report names affected
      */
     public static function invalidate(array $affectedReports): void
     {
@@ -140,9 +126,6 @@ class ReportCacheService
 
     /**
      * Get appropriate TTL for report type
-     *
-     * @param string $reportName
-     * @return int
      */
     public static function getTTL(string $reportName): int
     {
@@ -164,8 +147,6 @@ class ReportCacheService
     /**
      * Warm up cache for common reports
      * Useful untuk background jobs
-     *
-     * @return void
      */
     public static function warmup(): void
     {

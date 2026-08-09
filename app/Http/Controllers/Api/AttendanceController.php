@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAbsence;
+use App\Models\DailyNote;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -193,6 +194,38 @@ class AttendanceController extends Controller
             return response()->json([
                 'message' => 'Anda sudah absen pulang hari ini',
             ], 422);
+        }
+
+        // Catatan harian menahan absen pulang: hari tanpa catatan sama sekali ditolak, dan
+        // catatan yang masih terbuka juga ditolak.
+        //
+        // API lama melewati aturan ini lewat parameter `is_web` — pembebasan yang bisa dipakai
+        // siapa saja hanya dengan menambahkan satu parameter, jadi tidak ditiru. Penggantinya
+        // adalah jabatan: aturan ini memang untuk staf lapangan (Teknisi & Kurir), sedangkan
+        // Admin dan Admin Super mengabsenkan orang dari layar admin dan tidak boleh terkunci
+        // oleh catatan milik orang lain. Jabatan kantor lain (HRD, Finance, Sosmed, Crm) tidak
+        // pernah terkena aturan ini di aplikasi lama, jadi tetap tidak terkena.
+        $jabatan = strtolower(trim((string) ($user->role?->name ?? '')));
+
+        if (in_array($jabatan, ['teknisi', 'kurir'], true)) {
+            $catatan = DailyNote::where('users_id', $user->id)
+                ->where('date', '>=', $today)
+                ->where('date', '<', $tomorrow)
+                ->get();
+
+            if ($catatan->isEmpty()) {
+                return response()->json([
+                    'message' => 'Anda belum membuat catatan harian hari ini. Buat catatan dulu sebelum absen pulang.',
+                ], 422);
+            }
+
+            $belumSelesai = $catatan->where('status', '!=', 1)->count();
+
+            if ($belumSelesai > 0) {
+                return response()->json([
+                    'message' => "Masih ada {$belumSelesai} catatan harian hari ini yang belum diselesaikan. Selesaikan dulu sebelum absen pulang.",
+                ], 422);
+            }
         }
 
         // Get branch location

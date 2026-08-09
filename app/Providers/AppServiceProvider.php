@@ -13,7 +13,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Register BranchContext as singleton
         $this->app->singleton('branch.context', function ($app) {
-            return new \App\Services\BranchContext();
+            return new \App\Services\BranchContext;
         });
     }
 

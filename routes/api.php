@@ -1,8 +1,5 @@
 <?php
 
-use App\Http\Controllers\Api\Admin\ClaimController as AdminClaimController;
-use App\Http\Controllers\Api\Admin\RedemptionController as AdminRedemptionController;
-use App\Http\Controllers\Api\Admin\RewardController as AdminRewardController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
@@ -19,6 +16,7 @@ use App\Http\Controllers\Api\DailyNoteController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ExpenseOperationalController;
+use App\Http\Controllers\Api\GuaranteeClaimController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PartnershipController;
@@ -26,7 +24,9 @@ use App\Http\Controllers\Api\PartnershipTreatmentController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PublicInvoiceController;
+use App\Http\Controllers\Api\RedemptionController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\RewardController as AdminRewardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SendController;
 use App\Http\Controllers\Api\ServiceController;
@@ -189,7 +189,22 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('sends/mark-completed', [SendController::class, 'markAsCompleted']);
         // Rincian barang untuk kurir: pengerjaan, riwayat, kelengkapan. Tanpa harga.
         Route::get('sends/{id}/detail', [SendController::class, 'detail']);
+        // Jemput ulang: dari satu pengiriman yang sudah ada dibuatkan pesanan baru sekalian
+        // tugas jemputnya. Sebelum apiResource, sesuai aturan berkas ini.
+        Route::post('sends/{id}/reorder', [SendController::class, 'reorder']);
         Route::apiResource('sends', SendController::class);
+
+        // Barang pesanan untuk staf lapangan: kurir mencatat dan memeriksa barang di lokasi
+        // penjemputan. Rutenya dibuka, muatannya tidak — OrderController memangkas harga untuk
+        // non-admin, baik saat membaca (getItems) maupun saat menyimpan (saveItem mengambil
+        // harga dari master layanan, bukan dari perangkat lapangan).
+        Route::get('orders/{orderId}/items', [OrderController::class, 'getItems']);
+        Route::post('orders/{orderId}/items', [OrderController::class, 'saveItem']);
+        Route::delete('orders/{orderId}/items/{itemId}', [OrderController::class, 'removeItem']);
+
+        // Daftar layanan untuk memilih pengerjaan barang tadi. Menimpa index milik
+        // apiResource('services') di blok admin, yang karena itu dideklarasikan ->except(['index']).
+        Route::get('services', [ServiceController::class, 'index']);
     });
 
     /*
@@ -206,13 +221,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('orders/search/customers', [OrderController::class, 'searchCustomers']);
         Route::get('orders/search/services', [OrderController::class, 'searchServices']);
         Route::get('orders/available-pickup', [OrderController::class, 'getAvailablePickupOrders']);
-        Route::get('orders/{orderId}/items', [OrderController::class, 'getItems']);
-        Route::post('orders/{orderId}/items', [OrderController::class, 'saveItem']);
-        Route::delete('orders/{orderId}/items/{itemId}', [OrderController::class, 'removeItem']);
         Route::post('orders/{id}/invoice-link', [OrderController::class, 'invoiceLink']);
         Route::apiResource('orders', OrderController::class);
 
-        Route::apiResource('services', ServiceController::class);
+        // index-nya sudah dideklarasikan di blok lapangan supaya teknisi/kurir bisa memilih
+        // layanan; menulis layanan tetap wewenang admin.
+        Route::apiResource('services', ServiceController::class)->except(['index']);
 
         // Service HPP
         Route::prefix('services/{serviceId}/hpp')->group(function () {
@@ -311,11 +325,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('rewards', AdminRewardController::class)
             ->only(['index', 'store', 'update', 'destroy']);
 
-        Route::get('redemptions', [AdminRedemptionController::class, 'index']);
-        Route::post('redemptions/{id}/complete', [AdminRedemptionController::class, 'complete']);
+        Route::get('redemptions', [RedemptionController::class, 'index']);
+        Route::post('redemptions/{id}/complete', [RedemptionController::class, 'complete']);
 
-        Route::get('guarantee-claims', [AdminClaimController::class, 'index']);
-        Route::put('guarantee-claims/{id}', [AdminClaimController::class, 'update']);
+        Route::get('guarantee-claims', [GuaranteeClaimController::class, 'index']);
+        Route::put('guarantee-claims/{id}', [GuaranteeClaimController::class, 'update']);
     });
 
     /*

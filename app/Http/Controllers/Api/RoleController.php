@@ -28,14 +28,14 @@ class RoleController extends Controller
         ]);
 
         $role = Role::create([
-            'name'        => $validated['name'],
-            'created_by'  => auth()->id() ?? 1,
+            'name' => $validated['name'],
+            'created_by' => auth()->id() ?? 1,
             'modified_by' => auth()->id() ?? 1,
         ]);
 
         return response()->json([
             'message' => 'Jabatan berhasil ditambahkan.',
-            'data'    => $role,
+            'data' => $role,
         ], 201);
     }
 
@@ -56,13 +56,13 @@ class RoleController extends Controller
         ]);
 
         $role->update([
-            'name'        => $validated['name'],
+            'name' => $validated['name'],
             'modified_by' => auth()->id() ?? 1,
         ]);
 
         return response()->json([
             'message' => 'Jabatan berhasil diperbarui.',
-            'data'    => $role->fresh(),
+            'data' => $role->fresh(),
         ]);
     }
 

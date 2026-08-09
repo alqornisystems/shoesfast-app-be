@@ -52,8 +52,8 @@ class WhatsAppController extends Controller
             'driver' => 'wablas',
             'enabled' => $config['enabled'],
             'base_url' => $config['base_url'],
-            'token_set' => !empty(Setting::read('wablas_token', config('services.wablas.token', ''))),
-            'secret_set' => !empty(Setting::read('wablas_secret', config('services.wablas.secret', ''))),
+            'token_set' => ! empty(Setting::read('wablas_token', config('services.wablas.token', ''))),
+            'secret_set' => ! empty(Setting::read('wablas_secret', config('services.wablas.secret', ''))),
         ]);
     }
 
@@ -69,14 +69,14 @@ class WhatsAppController extends Controller
 
         Setting::write('wablas_enabled', $validated['enabled']);
 
-        if (!empty($validated['base_url'])) {
+        if (! empty($validated['base_url'])) {
             Setting::write('wablas_url', rtrim($validated['base_url'], '/'));
         }
         // Hanya timpa token/secret bila diisi — dibiarkan kosong = pakai yang lama.
-        if (!empty($validated['token'])) {
+        if (! empty($validated['token'])) {
             Setting::write('wablas_token', $validated['token']);
         }
-        if (!empty($validated['secret'])) {
+        if (! empty($validated['secret'])) {
             Setting::write('wablas_secret', $validated['secret']);
         }
 

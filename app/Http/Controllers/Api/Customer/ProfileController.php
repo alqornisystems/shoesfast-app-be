@@ -21,7 +21,14 @@ class ProfileController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:225'],
-            'photo' => ['nullable', 'string'],
+            'instagram' => ['nullable', 'string', 'max:100'],
+            'date_of_birth' => ['nullable', 'integer'],
+            // Kolom `photo` bertipe TEXT (batas 65.535 byte). Tanpa batas ini
+            // foto yang lebih besar dipotong diam-diam oleh MySQL dan yang
+            // tersimpan adalah data URL rusak yang tidak bisa dirender lagi.
+            // Portal sudah mengecilkan gambar sebelum mengirim; batas ini
+            // yang menjaga kalau ada yang menembak endpoint langsung.
+            'photo' => ['nullable', 'string', 'max:60000'],
             'address' => ['nullable', 'string'],
             'maps' => ['nullable', 'string'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -31,7 +38,15 @@ class ProfileController extends Controller
         $customer->update([
             'name' => $validated['name'],
             'email' => $validated['email'] ?? $customer->email,
-            'photo' => $validated['photo'] ?? $customer->photo,
+            'instagram' => $validated['instagram'] ?? $customer->instagram,
+            'date_of_birth' => $validated['date_of_birth'] ?? $customer->date_of_birth,
+            // Dibaca dengan array_key_exists, bukan ??: mengirim photo:null
+            // adalah cara portal menghapus foto, dan ?? akan membacanya
+            // sebagai "tidak diubah" sehingga tombol hapus tidak pernah
+            // benar-benar menghapus.
+            'photo' => array_key_exists('photo', $validated)
+                ? $validated['photo']
+                : $customer->photo,
             'address' => $validated['address'] ?? $customer->address,
             'maps' => $validated['maps'] ?? $customer->maps,
             'latitude' => $validated['latitude'] ?? $customer->latitude,

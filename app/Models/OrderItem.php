@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Model;
 
 class OrderItem extends Model
 {
     use BranchScoped;
 
     protected $table = 'orders_items';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     protected $fillable = [

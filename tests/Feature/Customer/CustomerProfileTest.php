@@ -88,6 +88,51 @@ class CustomerProfileTest extends TestCase
         $this->assertSame(0, (int) $fresh->is_member);
     }
 
+    public function test_customer_uploads_then_removes_photo(): void
+    {
+        $this->actingAsCustomer();
+        $foto = 'data:image/jpeg;base64,'.base64_encode('sebuah-foto');
+
+        $this->putJson('/api/customer/profile', [
+            'name' => 'Budi',
+            'photo' => $foto,
+        ])->assertStatus(200)->assertJsonPath('customer.photo', $foto);
+
+        // photo:null berarti "hapus", bukan "biarkan" — pembacaan pakai ??
+        // akan membuat tombol hapus di portal tidak pernah bekerja.
+        $this->putJson('/api/customer/profile', [
+            'name' => 'Budi',
+            'photo' => null,
+        ])->assertStatus(200)->assertJsonPath('customer.photo', null);
+
+        $this->assertNull(Customer::first()->photo);
+    }
+
+    public function test_photo_larger_than_the_text_column_is_rejected(): void
+    {
+        $this->actingAsCustomer();
+
+        // Kolomnya TEXT (65.535 byte). Tanpa aturan max, MySQL memotong diam-
+        // diam dan yang tersimpan adalah data URL rusak.
+        $this->putJson('/api/customer/profile', [
+            'name' => 'Budi',
+            'photo' => str_repeat('a', 61_000),
+        ])->assertStatus(422)->assertJsonValidationErrors('photo');
+    }
+
+    public function test_customer_saves_instagram_and_birthday(): void
+    {
+        $this->actingAsCustomer();
+
+        $this->putJson('/api/customer/profile', [
+            'name' => 'Budi',
+            'instagram' => 'budi.shoes',
+            'date_of_birth' => 852076800,
+        ])->assertStatus(200)
+            ->assertJsonPath('customer.instagram', 'budi.shoes')
+            ->assertJsonPath('customer.date_of_birth', 852076800);
+    }
+
     public function test_latitude_out_of_range_is_rejected(): void
     {
         $this->actingAsCustomer();

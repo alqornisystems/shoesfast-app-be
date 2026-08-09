@@ -26,7 +26,7 @@ class BranchContext
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return null;
         }
 
@@ -55,12 +55,12 @@ class BranchContext
     /**
      * Switch active branch (super admin only)
      *
-     * @param int|null $branchId - null means "view all branches"
+     * @param  int|null  $branchId  - null means "view all branches"
      * @return bool Success status
      */
     public function switchBranch(?int $branchId): bool
     {
-        if (!$this->isSuperAdmin()) {
+        if (! $this->isSuperAdmin()) {
             return false;
         }
 

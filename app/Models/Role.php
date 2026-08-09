@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class Role extends Model
 {
@@ -11,8 +11,11 @@ class Role extends Model
 
     // Existing DB uses Unix integer timestamps
     protected $dateFormat = 'U';
+
     public $timestamps = true;
+
     const CREATED_AT = 'created_at';
+
     const UPDATED_AT = 'modified_at';
 
     protected $fillable = [
@@ -42,6 +45,7 @@ class Role extends Model
     public function delete()
     {
         $this->is_deleted = 1;
+
         return $this->save();
     }
 

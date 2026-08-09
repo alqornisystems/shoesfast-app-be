@@ -12,6 +12,7 @@ class BroadcastTemplate extends Model
     use BranchScoped;
 
     protected $table = 'broadcasts_templates';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     const UPDATED_AT = 'modified_at';
@@ -72,7 +73,7 @@ class BroadcastTemplate extends Model
         $content = $this->content;
 
         foreach ($data as $key => $value) {
-            $content = str_replace('{' . $key . '}', $value, $content);
+            $content = str_replace('{'.$key.'}', $value, $content);
         }
 
         return $content;
@@ -84,6 +85,7 @@ class BroadcastTemplate extends Model
     public function getAvailableVariables(): array
     {
         preg_match_all('/\{([a-z_]+)\}/', $this->content, $matches);
+
         return $matches[1] ?? [];
     }
 }

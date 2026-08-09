@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Model;
 
 class Payment extends Model
 {
     use BranchScoped;
 
     protected $table = 'payments';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     protected $fillable = [

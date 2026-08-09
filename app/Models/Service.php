@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class Service extends Model
 {
@@ -51,6 +51,7 @@ class Service extends Model
     {
         // Set is_deleted to 1 instead of actual deletion
         $this->is_deleted = 1;
+
         return $this->save();
     }
 

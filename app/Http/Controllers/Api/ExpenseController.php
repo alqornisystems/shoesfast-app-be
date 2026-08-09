@@ -24,6 +24,7 @@ class ExpenseController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
+
         return response()->json($query->paginate($perPage));
     }
 
@@ -40,8 +41,8 @@ class ExpenseController extends Controller
         DB::beginTransaction();
         try {
             $photoPath = null;
-            if (!empty($validated['photo'])) {
-                $photoPath = $this->uploadBase64Image($validated['photo'], 'expense-' . time());
+            if (! empty($validated['photo'])) {
+                $photoPath = $this->uploadBase64Image($validated['photo'], 'expense-'.time());
             }
 
             $expense = Expense::create([
@@ -65,6 +66,7 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'Pengeluaran berhasil ditambahkan', 'data' => $expense], 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'Gagal menambahkan pengeluaran', 'error' => $e->getMessage()], 500);
         }
     }
@@ -86,7 +88,7 @@ class ExpenseController extends Controller
                 if ($expense->photo && Storage::exists($expense->photo)) {
                     Storage::delete($expense->photo);
                 }
-                $validated['photo'] = $this->uploadBase64Image($validated['photo'], 'expense-' . time());
+                $validated['photo'] = $this->uploadBase64Image($validated['photo'], 'expense-'.time());
             }
 
             if (isset($validated['date'])) {
@@ -108,6 +110,7 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'Pengeluaran berhasil diupdate', 'data' => $expense]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['message' => 'Gagal mengupdate pengeluaran', 'error' => $e->getMessage()], 500);
         }
     }
@@ -133,10 +136,13 @@ class ExpenseController extends Controller
             $base64String = substr($base64String, strpos($base64String, ',') + 1);
             $type = strtolower($type[1]);
             $imageData = base64_decode(str_replace(' ', '+', $base64String));
-            if ($imageData === false) throw new \Exception('base64_decode failed');
+            if ($imageData === false) {
+                throw new \Exception('base64_decode failed');
+            }
 
-            $path = 'expenses/' . $filename . '.' . $type;
+            $path = 'expenses/'.$filename.'.'.$type;
             Storage::disk('public')->put($path, $imageData);
+
             return $path;
         }
         throw new \Exception('Invalid image format');

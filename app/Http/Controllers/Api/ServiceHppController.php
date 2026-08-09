@@ -21,23 +21,23 @@ class ServiceHppController extends Controller
             ->map(function ($items) {
                 return $items->map(function ($item) {
                     return [
-                        'id'                 => $item->id,
-                        'services_id'        => $item->services_id,
-                        'name'               => $item->name,
-                        'unit'               => $item->unit,
-                        'total_stock'        => $item->total_stock,
-                        'usage_per_service'  => $item->usage_per_service,
-                        'total_cost'         => $item->total_cost,
-                        'cost_per_usage'     => $item->cost_per_usage,
-                        'status'             => $item->status,
+                        'id' => $item->id,
+                        'services_id' => $item->services_id,
+                        'name' => $item->name,
+                        'unit' => $item->unit,
+                        'total_stock' => $item->total_stock,
+                        'usage_per_service' => $item->usage_per_service,
+                        'total_cost' => $item->total_cost,
+                        'cost_per_usage' => $item->cost_per_usage,
+                        'status' => $item->status,
                     ];
                 })->values();
             });
 
         // Ensure all categories exist
         $response = [
-            'direct_material'   => $hppItems->get('direct', collect())->all(),
-            'direct_labor'      => $hppItems->get('labor', collect())->all(),
+            'direct_material' => $hppItems->get('direct', collect())->all(),
+            'direct_labor' => $hppItems->get('labor', collect())->all(),
             'indirect_material' => $hppItems->get('indirect', collect())->all(),
         ];
 
@@ -50,10 +50,10 @@ class ServiceHppController extends Controller
         return response()->json([
             'data' => $response,
             'summary' => [
-                'direct_material_total'   => $directMaterialTotal,
-                'direct_labor_total'      => $directLaborTotal,
+                'direct_material_total' => $directMaterialTotal,
+                'direct_labor_total' => $directLaborTotal,
                 'indirect_material_total' => $indirectMaterialTotal,
-                'total_hpp'               => $totalHpp,
+                'total_hpp' => $totalHpp,
             ],
         ]);
     }
@@ -62,31 +62,31 @@ class ServiceHppController extends Controller
     public function store(Request $request, int $serviceId): JsonResponse
     {
         $validated = $request->validate([
-            'name'               => ['required', 'string', 'max:100'],
-            'unit'               => ['required', 'string', 'max:10'],
-            'total_stock'        => ['required', 'integer', 'min:1'],
-            'usage_per_service'  => ['required', 'integer', 'min:1'],
-            'total_cost'         => ['required', 'integer', 'min:0'],
-            'cost_per_usage'     => ['required', 'integer', 'min:0'],
-            'status'             => ['required', 'in:direct,indirect,labor'],
+            'name' => ['required', 'string', 'max:100'],
+            'unit' => ['required', 'string', 'max:10'],
+            'total_stock' => ['required', 'integer', 'min:1'],
+            'usage_per_service' => ['required', 'integer', 'min:1'],
+            'total_cost' => ['required', 'integer', 'min:0'],
+            'cost_per_usage' => ['required', 'integer', 'min:0'],
+            'status' => ['required', 'in:direct,indirect,labor'],
         ]);
 
         $hpp = ServiceHpp::create([
-            'services_id'       => $serviceId,
-            'name'              => $validated['name'],
-            'unit'              => $validated['unit'],
-            'total_stock'       => $validated['total_stock'],
+            'services_id' => $serviceId,
+            'name' => $validated['name'],
+            'unit' => $validated['unit'],
+            'total_stock' => $validated['total_stock'],
             'usage_per_service' => $validated['usage_per_service'],
-            'total_cost'        => $validated['total_cost'],
-            'cost_per_usage'    => $validated['cost_per_usage'],
-            'status'            => $validated['status'],
-            'created_by'        => auth()->id() ?? 1,
-            'modified_by'       => auth()->id() ?? 1,
+            'total_cost' => $validated['total_cost'],
+            'cost_per_usage' => $validated['cost_per_usage'],
+            'status' => $validated['status'],
+            'created_by' => auth()->id() ?? 1,
+            'modified_by' => auth()->id() ?? 1,
         ]);
 
         return response()->json([
             'message' => 'HPP item berhasil ditambahkan.',
-            'data'    => $hpp,
+            'data' => $hpp,
         ], 201);
     }
 
@@ -96,29 +96,29 @@ class ServiceHppController extends Controller
         $hpp = ServiceHpp::forService($serviceId)->findOrFail($id);
 
         $validated = $request->validate([
-            'name'               => ['required', 'string', 'max:100'],
-            'unit'               => ['required', 'string', 'max:10'],
-            'total_stock'        => ['required', 'integer', 'min:1'],
-            'usage_per_service'  => ['required', 'integer', 'min:1'],
-            'total_cost'         => ['required', 'integer', 'min:0'],
-            'cost_per_usage'     => ['required', 'integer', 'min:0'],
-            'status'             => ['required', 'in:direct,indirect,labor'],
+            'name' => ['required', 'string', 'max:100'],
+            'unit' => ['required', 'string', 'max:10'],
+            'total_stock' => ['required', 'integer', 'min:1'],
+            'usage_per_service' => ['required', 'integer', 'min:1'],
+            'total_cost' => ['required', 'integer', 'min:0'],
+            'cost_per_usage' => ['required', 'integer', 'min:0'],
+            'status' => ['required', 'in:direct,indirect,labor'],
         ]);
 
         $hpp->update([
-            'name'              => $validated['name'],
-            'unit'              => $validated['unit'],
-            'total_stock'       => $validated['total_stock'],
+            'name' => $validated['name'],
+            'unit' => $validated['unit'],
+            'total_stock' => $validated['total_stock'],
             'usage_per_service' => $validated['usage_per_service'],
-            'total_cost'        => $validated['total_cost'],
-            'cost_per_usage'    => $validated['cost_per_usage'],
-            'status'            => $validated['status'],
-            'modified_by'       => auth()->id() ?? 1,
+            'total_cost' => $validated['total_cost'],
+            'cost_per_usage' => $validated['cost_per_usage'],
+            'status' => $validated['status'],
+            'modified_by' => auth()->id() ?? 1,
         ]);
 
         return response()->json([
             'message' => 'HPP item berhasil diperbarui.',
-            'data'    => $hpp->fresh(),
+            'data' => $hpp->fresh(),
         ]);
     }
 
@@ -136,10 +136,10 @@ class ServiceHppController extends Controller
     public function batchSave(Request $request, int $serviceId): JsonResponse
     {
         $validated = $request->validate([
-            'direct_material'   => ['nullable', 'array'],
+            'direct_material' => ['nullable', 'array'],
             'direct_material.*' => ['array'],
-            'direct_labor'      => ['nullable', 'array'],
-            'direct_labor.*'    => ['array'],
+            'direct_labor' => ['nullable', 'array'],
+            'direct_labor.*' => ['array'],
             'indirect_material' => ['nullable', 'array'],
             'indirect_material.*' => ['array'],
         ]);
@@ -150,8 +150,8 @@ class ServiceHppController extends Controller
         $savedItems = [];
         $totalHpp = 0;
         $statusMap = [
-            'direct_material'   => 'direct',
-            'direct_labor'      => 'labor',
+            'direct_material' => 'direct',
+            'direct_labor' => 'labor',
             'indirect_material' => 'indirect',
         ];
 
@@ -166,16 +166,16 @@ class ServiceHppController extends Controller
                     $totalHpp += $costPerUsage;
 
                     $savedItems[] = ServiceHpp::create([
-                        'services_id'       => $serviceId,
-                        'name'              => $item['name'] ?? '',
-                        'unit'              => $item['unit'] ?? '',
-                        'total_stock'       => $item['total_stock'] ?? 0,
+                        'services_id' => $serviceId,
+                        'name' => $item['name'] ?? '',
+                        'unit' => $item['unit'] ?? '',
+                        'total_stock' => $item['total_stock'] ?? 0,
                         'usage_per_service' => $item['usage_per_service'] ?? 0,
-                        'total_cost'        => $item['total_cost'] ?? 0,
-                        'cost_per_usage'    => $costPerUsage,
-                        'status'            => $status,
-                        'created_by'        => auth()->id() ?? 1,
-                        'modified_by'       => auth()->id() ?? 1,
+                        'total_cost' => $item['total_cost'] ?? 0,
+                        'cost_per_usage' => $costPerUsage,
+                        'status' => $status,
+                        'created_by' => auth()->id() ?? 1,
+                        'modified_by' => auth()->id() ?? 1,
                     ]);
                 }
             }
@@ -190,7 +190,7 @@ class ServiceHppController extends Controller
 
         return response()->json([
             'message' => 'HPP items berhasil disimpan.',
-            'data'    => $savedItems,
+            'data' => $savedItems,
             'total_hpp' => $totalHpp,
         ]);
     }

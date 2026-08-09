@@ -30,9 +30,9 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'phone'          => ['required', 'string'],
-            'password'       => ['required', 'string'],
-            'remember_me'    => ['nullable', 'boolean'],
+            'phone' => ['required', 'string'],
+            'password' => ['required', 'string'],
+            'remember_me' => ['nullable', 'boolean'],
         ]);
 
         $normalizedPhone = $this->normalizePhone($request->phone);
@@ -58,21 +58,21 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Login berhasil.',
-            'token'   => $token,
+            'token' => $token,
             'expires_at' => $expiresAt->toIso8601String(),
-            'user'    => [
-                'id'           => $user->id,
-                'name'         => $user->name,
-                'email'        => $user->email,
-                'role'         => $user->role?->name,
-                'projects_id'  => $user->projects_id,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role?->name,
+                'projects_id' => $user->projects_id,
                 'project_name' => $user->project?->name,
                 'is_super_admin' => $user->projects_id === null,
             ],
             'branch' => [
-                'active_id'   => $branchContext->getActiveBranch(),
+                'active_id' => $branchContext->getActiveBranch(),
                 'active_name' => $branchContext->getActiveBranchName(),
-                'can_switch'  => $branchContext->isSuperAdmin(),
+                'can_switch' => $branchContext->isSuperAdmin(),
             ],
         ]);
     }
@@ -136,7 +136,7 @@ class AuthController extends Controller
 
         $branchContext = app('branch.context');
 
-        if (!$branchContext->isSuperAdmin()) {
+        if (! $branchContext->isSuperAdmin()) {
             return response()->json([
                 'message' => 'Only super admin can switch branches.',
             ], 403);
@@ -148,7 +148,7 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Branch switched successfully.',
             'branch' => [
-                'active_id'   => $branchContext->getActiveBranch(),
+                'active_id' => $branchContext->getActiveBranch(),
                 'active_name' => $branchContext->getActiveBranchName(),
             ],
         ]);
@@ -162,18 +162,18 @@ class AuthController extends Controller
 
         return response()->json([
             'user' => [
-                'id'           => $user->id,
-                'name'         => $user->name,
-                'email'        => $user->email,
-                'role'         => $user->role?->name,
-                'projects_id'  => $user->projects_id,
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role?->name,
+                'projects_id' => $user->projects_id,
                 'project_name' => $user->project?->name,
                 'is_super_admin' => $user->projects_id === null,
             ],
             'branch' => [
-                'active_id'   => $branchContext->getActiveBranch(),
+                'active_id' => $branchContext->getActiveBranch(),
                 'active_name' => $branchContext->getActiveBranchName(),
-                'can_switch'  => $branchContext->isSuperAdmin(),
+                'can_switch' => $branchContext->isSuperAdmin(),
             ],
         ]);
     }
@@ -184,28 +184,28 @@ class AuthController extends Controller
         $user = $request->user();
 
         $validated = $request->validate([
-            'name'  => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100'],
             'email' => ['required', 'email', 'max:50'],
             'photo' => ['nullable', 'string'],
         ]);
 
         $user->update([
-            'name'        => $validated['name'],
-            'email'       => $validated['email'],
-            'photo'       => $validated['photo'] ?? $user->photo,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'photo' => $validated['photo'] ?? $user->photo,
             'modified_by' => $user->id,
         ]);
 
         return response()->json([
             'message' => 'Profil berhasil diperbarui.',
-            'user'    => [
-                'id'           => $user->id,
-                'name'         => $user->name,
-                'email'        => $user->email,
-                'phone'        => $user->phone,
-                'photo'        => $user->photo,
-                'role'         => $user->role?->name,
-                'projects_id'  => $user->projects_id,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'photo' => $user->photo,
+                'role' => $user->role?->name,
+                'projects_id' => $user->projects_id,
                 'project_name' => $user->project?->name,
             ],
         ]);
@@ -218,11 +218,11 @@ class AuthController extends Controller
 
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password'     => ['required', 'string', 'min:6', 'confirmed'],
+            'new_password' => ['required', 'string', 'min:6', 'confirmed'],
         ]);
 
         // Verify current password
-        if (!$this->checkPassword($validated['current_password'], $user->password)) {
+        if (! $this->checkPassword($validated['current_password'], $user->password)) {
             return response()->json([
                 'message' => 'Password lama tidak sesuai.',
             ], 422);
@@ -230,7 +230,7 @@ class AuthController extends Controller
 
         // Update to new password (bcrypt)
         $user->update([
-            'password'    => Hash::make($validated['new_password']),
+            'password' => Hash::make($validated['new_password']),
             'modified_by' => $user->id,
         ]);
 

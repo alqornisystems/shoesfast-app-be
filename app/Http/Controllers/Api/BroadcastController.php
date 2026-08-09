@@ -3,15 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\BroadcastTemplate;
 use App\Models\BroadcastSend;
-use App\Models\User;
+use App\Models\BroadcastTemplate;
 use App\Models\Customer;
+use App\Models\User;
 use App\Services\WhatsAppService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class BroadcastController extends Controller
 {
@@ -37,7 +36,7 @@ class BroadcastController extends Controller
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('content', 'like', "%{$search}%");
+                    ->orWhere('content', 'like', "%{$search}%");
             });
         }
 
@@ -279,6 +278,7 @@ class BroadcastController extends Controller
         foreach ($recipients as $recipient) {
             if (empty($recipient->phone)) {
                 $failedCount++;
+
                 continue;
             }
 
@@ -304,8 +304,8 @@ class BroadcastController extends Controller
         if ($failedCount > 0) {
             $statusMessage .= ", {$failedCount} gagal";
         }
-        if (!$this->whatsapp->isEnabled()) {
-            $statusMessage .= " (WhatsApp disabled - messages not actually sent)";
+        if (! $this->whatsapp->isEnabled()) {
+            $statusMessage .= ' (WhatsApp disabled - messages not actually sent)';
         }
 
         return response()->json([
@@ -341,7 +341,7 @@ class BroadcastController extends Controller
                 ->get();
         } else {
             $recipientIds = $broadcast->getRecipientIds();
-            if (!empty($recipientIds)) {
+            if (! empty($recipientIds)) {
                 $recipients = User::whereIn('id', $recipientIds)
                     ->where('is_deleted', 0)
                     ->select('id', 'name', 'phone')

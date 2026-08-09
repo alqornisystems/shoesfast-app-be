@@ -11,6 +11,7 @@ class BroadcastSend extends Model
     use BranchScoped;
 
     protected $table = 'broadcasts_sends';
+
     protected $dateFormat = 'U'; // Unix timestamp
 
     const UPDATED_AT = 'modified_at';
@@ -100,6 +101,7 @@ class BroadcastSend extends Model
         }
 
         $ids = $this->getRecipientIds();
+
         return count($ids);
     }
 }
