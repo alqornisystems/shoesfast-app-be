@@ -13,6 +13,11 @@ Basis URL baru: `https://<host>/api`. Semua contoh di bawah relatif terhadap itu
 > padanannya, tapi ejaan jalur lamanya harap dicocokkan sendiri dengan kode Slim sebelum
 > dipakai sebagai daftar centang.
 
+> **Dokumen ini menjelaskan kontrak yang sudah ada.** Untuk hal yang masih terbuka —
+> verifikasi PIN absensi, kalender kehadiran, staging — lihat
+> [`jawaban-pertanyaan-mobile.md`](./jawaban-pertanyaan-mobile.md). Begitu keputusannya
+> turun, hasilnya pindah ke sini dan dokumen itu boleh dibuang.
+
 ---
 
 ## 1. Tabel pemetaan
@@ -86,7 +91,7 @@ Basis URL baru: `https://<host>/api`. Semua contoh di bawah relatif terhadap itu
 | Bendera `is_web` untuk melewati aturan catatan harian | Parameter yang bisa dikirim siapa saja bukan pembebasan. Diganti pembebasan berbasis jabatan (§3.6). |
 | `GET /mobiles/list-general` | Sisa debug. |
 | Perhitungan telat (`jam > 8 ATAU menit >= 40`) | Salah: absen 07:45 terhitung telat. Tidak ditiru. `GET /attendances` tidak mengembalikan penanda telat sama sekali. |
-| Perhitungan alpa yang mencampur "Izin" dengan "Alpha" | Salah. Tidak ditiru. Kalau butuh rekap, pakai `GET /reports/attendance` (khusus Admin/HRD). |
+| Perhitungan alpa yang mencampur "Izin" dengan "Alpha" | Salah. Tidak ditiru. Rekapnya ada di `GET /reports/attendance` — tapi jalur itu dikunci `role:Admin Super,Admin,HRD`, jadi **Teknisi & Kurir dapat 403**. Untuk aplikasi lapangan jalur ini buntu; lihat jawaban §2. |
 | Password `sha1` | Login masih menerima hash sha1 lama supaya akun lama tidak terkunci, tapi password baru ditulis bcrypt. Tidak ada perubahan di sisi aplikasi. |
 
 ---
@@ -303,6 +308,12 @@ Angka rupiah yang **tetap** terlihat kurir, karena memang dibutuhkan saat serah 
 `GET /sends/{id}/detail` → `total_price`, `total_paid`, `credit`, `payment_status`. Juga
 `GET /sends/pickup-waiting-list` → `total_price` dan `GET /sends/delivery-waiting-list` →
 `price`/`discount` (peninggalan; jangan ditampilkan di layar kurir).
+
+⚠️ **`payment_status` bisa berbohong.** `orders.total_price` boleh `NULL` (pesanan portal
+pelanggan lahir tanpa harga — ditentukan setelah barang diperiksa), dan server memakai
+`?? 0`. Akibatnya pesanan tanpa harga menghasilkan `credit = 0` dan dilaporkan
+**`"paid"`**. Sampai diperbaiki di backend, perlakukan `total_price` kosong/nol sebagai
+"harga belum ditentukan", bukan sebagai lunas.
 
 ### 3.7 Absen pulang bisa ditolak karena catatan harian
 
