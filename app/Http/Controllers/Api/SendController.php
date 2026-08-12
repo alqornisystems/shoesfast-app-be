@@ -562,6 +562,11 @@ class SendController extends Controller
                 'type' => $send->type,
                 'type_label' => $send->type == 0 ? 'Pickup' : 'Delivery',
                 'status' => $send->status,
+                // Layar Barang di aplikasi kurir dibuka dengan orders_id
+                // (GET /orders/{orderId}/items). Tanpa kunci ini tombolnya tidak
+                // pernah bisa muncul — kode invoice saja tidak cukup.
+                'orders_id' => $send->orders_id,
+                'orders_items_id' => $send->orders_items_id,
                 'courier_name' => $send->user->name ?? null,
                 'courier_phone' => $send->user->phone ?? null,
                 'order_code' => $send->order->code ?? null,
@@ -633,6 +638,11 @@ class SendController extends Controller
                 'type' => $send->type,
                 'type_label' => $send->type == 0 ? 'Pickup' : 'Delivery',
                 'status' => $send->status,
+                // Layar Barang di aplikasi kurir dibuka dengan orders_id
+                // (GET /orders/{orderId}/items). Tanpa kunci ini tombolnya tidak
+                // pernah bisa muncul — kode invoice saja tidak cukup.
+                'orders_id' => $send->orders_id,
+                'orders_items_id' => $send->orders_items_id,
                 'courier_name' => $send->user->name ?? null,
                 'courier_phone' => $send->user->phone ?? null,
                 'order_code' => $send->order->code ?? null,
@@ -830,8 +840,14 @@ class SendController extends Controller
         // tidak pernah berselisih dengan layar pembayaran. Harga per item tetap tidak dikirim.
         $order = $send->order;
         $totalPaid = $order ? Payment::where('orders_id', $order->id)->sum('nominal') : 0;
-        $totalPrice = $order->total_price ?? 0;
-        $credit = $totalPrice - $totalPaid;
+
+        // Harga BOLEH belum ada: pesanan dari portal pelanggan lahir tanpa harga, dan
+        // petugas menentukannya setelah barang diperiksa. Sebelumnya null dipaksa jadi 0,
+        // sehingga credit = 0 dan pesanan yang belum ditagih dilaporkan 'paid' — kurir
+        // menyerahkan barang tanpa menagih. Keadaan itu sekarang punya namanya sendiri.
+        $belumBerharga = $order === null || $order->total_price === null || (int) $order->total_price === 0;
+        $totalPrice = $belumBerharga ? null : (int) $order->total_price;
+        $credit = $belumBerharga ? null : $totalPrice - $totalPaid;
 
         return response()->json([
             'id' => $send->id,
@@ -839,7 +855,9 @@ class SendController extends Controller
             'total_price' => $totalPrice,
             'total_paid' => $totalPaid,
             'credit' => $credit,
-            'payment_status' => $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid'),
+            'payment_status' => $belumBerharga
+                ? 'unpriced'
+                : ($credit <= 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid')),
             'order_code' => $send->order->code ?? null,
             'customer_name' => $send->order->customer->name ?? null,
             'customer_address' => $send->order->customer->address ?? null,

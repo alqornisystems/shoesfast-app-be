@@ -26,6 +26,51 @@ class AuthController extends Controller
         return $normalized;
     }
 
+    /**
+     * Radius absensi dalam meter. Sama untuk semua cabang — tabel `projects`
+     * tidak punya kolom radius. Dikirim ke klien lewat login dan /auth/me
+     * supaya aplikasi mobile tidak perlu menuliskannya ulang: klien yang lebih
+     * ketat daripada server menolak orang yang sebenarnya sah, dan bedanya
+     * tidak akan ketahuan sampai ada karyawan gagal absen di lapangan.
+     */
+    public const ATTENDANCE_RADIUS_METERS = 1000;
+
+    /**
+     * Bentuk pengguna yang dikirim ke klien. Satu tempat, dipakai login
+     * maupun /auth/me — dua salinan yang berbeda isinya persis jenis
+     * ketidakcocokan yang membuat sesi hasil pemulihan kehilangan foto dan
+     * nomor telepon yang tadinya ada saat login.
+     */
+    private function presentUser(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            // Sudah ternormalisasi tanpa awalan 0/62 — bentuk yang sama dengan
+            // yang diterima endpoint login.
+            'phone' => $user->phone,
+            'photo' => $this->photoUrl($user->photo),
+            'role' => $user->role?->name,
+            'projects_id' => $user->projects_id,
+            'project_name' => $user->project?->name,
+            'is_super_admin' => $user->projects_id === null,
+        ];
+    }
+
+    /**
+     * Data lama menyimpan URL absolut, unggahan baru menyimpan jalur relatif.
+     * Aturannya sama dengan OrderController dan Api\Customer\CatalogController.
+     */
+    private function photoUrl(?string $photo): ?string
+    {
+        if (empty($photo)) {
+            return null;
+        }
+
+        return filter_var($photo, FILTER_VALIDATE_URL) ? $photo : asset('storage/'.$photo);
+    }
+
     // POST /api/auth/login
     public function login(Request $request): JsonResponse
     {
@@ -60,19 +105,14 @@ class AuthController extends Controller
             'message' => 'Login berhasil.',
             'token' => $token,
             'expires_at' => $expiresAt->toIso8601String(),
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role?->name,
-                'projects_id' => $user->projects_id,
-                'project_name' => $user->project?->name,
-                'is_super_admin' => $user->projects_id === null,
-            ],
+            'user' => $this->presentUser($user),
             'branch' => [
                 'active_id' => $branchContext->getActiveBranch(),
                 'active_name' => $branchContext->getActiveBranchName(),
                 'can_switch' => $branchContext->isSuperAdmin(),
+            ],
+            'attendance' => [
+                'radius_meters' => self::ATTENDANCE_RADIUS_METERS,
             ],
         ]);
     }
@@ -161,19 +201,14 @@ class AuthController extends Controller
         $branchContext = app('branch.context');
 
         return response()->json([
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role?->name,
-                'projects_id' => $user->projects_id,
-                'project_name' => $user->project?->name,
-                'is_super_admin' => $user->projects_id === null,
-            ],
+            'user' => $this->presentUser($user),
             'branch' => [
                 'active_id' => $branchContext->getActiveBranch(),
                 'active_name' => $branchContext->getActiveBranchName(),
                 'can_switch' => $branchContext->isSuperAdmin(),
+            ],
+            'attendance' => [
+                'radius_meters' => self::ATTENDANCE_RADIUS_METERS,
             ],
         ]);
     }

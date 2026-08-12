@@ -112,12 +112,14 @@ class AttendanceController extends Controller
             $userLng
         );
 
-        // Validate radius (1000 meters = 1 km) - only if not WFA
-        if (! $isWfa && $distance > 1000) {
+        // Radius dibaca dari satu konstanta yang juga dikirim ke klien lewat login dan
+        // /auth/me. Angka yang ditulis dua kali akan berselisih suatu hari, dan selisihnya
+        // baru ketahuan saat ada karyawan gagal absen di lapangan.
+        if (! $isWfa && $distance > AuthController::ATTENDANCE_RADIUS_METERS) {
             return response()->json([
                 'message' => 'Anda berada di luar radius absensi (1 km dari kantor)',
                 'distance' => round($distance, 2),
-                'max_distance' => 1000,
+                'max_distance' => AuthController::ATTENDANCE_RADIUS_METERS,
             ], 422);
         }
 
@@ -249,12 +251,14 @@ class AttendanceController extends Controller
             $userLng
         );
 
-        // Validate radius (1000 meters = 1 km) - only if not WFA
-        if (! $isWfa && $distance > 1000) {
+        // Radius dibaca dari satu konstanta yang juga dikirim ke klien lewat login dan
+        // /auth/me. Angka yang ditulis dua kali akan berselisih suatu hari, dan selisihnya
+        // baru ketahuan saat ada karyawan gagal absen di lapangan.
+        if (! $isWfa && $distance > AuthController::ATTENDANCE_RADIUS_METERS) {
             return response()->json([
                 'message' => 'Anda berada di luar radius absensi (1 km dari kantor)',
                 'distance' => round($distance, 2),
-                'max_distance' => 1000,
+                'max_distance' => AuthController::ATTENDANCE_RADIUS_METERS,
             ], 422);
         }
 
@@ -378,9 +382,26 @@ class AttendanceController extends Controller
      */
     public function absences(Request $request): JsonResponse
     {
+        $request->validate([
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date'],
+        ]);
+
         $user = $request->user();
 
         $query = AttendanceAbsence::with('user');
+
+        // Penyaring rentang tanggal. Sebelumnya endpoint ini mengabaikan keduanya dan
+        // selalu mengirim SELURUH riwayat pengajuan; klien yang cuma butuh tahun berjalan
+        // tetap harus mengunduh semuanya. Dicocokkan ke date_start karena itulah tanggal
+        // yang dipakai pengguna saat mencari izinnya.
+        if ($request->filled('start_date')) {
+            $query->where('date_start', '>=', strtotime($request->input('start_date')));
+        }
+
+        if ($request->filled('end_date')) {
+            $query->where('date_start', '<=', strtotime($request->input('end_date').' 23:59:59'));
+        }
 
         // Hanya admin yang melihat pengajuan semua orang; sisanya miliknya sendiri.
         //
@@ -405,7 +426,7 @@ class AttendanceController extends Controller
                 'date_end' => $absence->date_end,
                 'total_days' => $absence->total_days,
                 'note' => $absence->note,
-                'photo' => $absence->photo,
+                'photo' => $this->fotoIzinUrl($absence->photo),
                 'is_approval' => $absence->is_approval,
                 'approval_label' => $this->getApprovalLabel($absence->is_approval),
                 'created_at' => $absence->created_at,
@@ -415,6 +436,53 @@ class AttendanceController extends Controller
         return response()->json([
             'data' => $data,
         ]);
+    }
+
+    /**
+     * Simpan data URL gambar ke storage publik, kembalikan jalur relatifnya.
+     *
+     * @throws \Exception kalau yang dikirim bukan data URL gambar
+     */
+    private function simpanFotoIzin(string $dataUrl): string
+    {
+        if (! preg_match('/^data:image\/(\w+);base64,/', $dataUrl, $cocok)) {
+            throw new \Exception('Format gambar tidak dikenali');
+        }
+
+        $jenis = strtolower($cocok[1]) === 'jpeg' ? 'jpg' : strtolower($cocok[1]);
+        // str_replace: sebagian klien mengirim data URL lewat query string, dan '+'
+        // berubah jadi spasi di perjalanan.
+        $base64 = str_replace(' ', '+', substr($dataUrl, strpos($dataUrl, ',') + 1));
+        $isi = base64_decode($base64, true);
+
+        if ($isi === false) {
+            throw new \Exception('base64 tidak valid');
+        }
+
+        $jalur = 'absences/absence_'.time().'_'.uniqid().'.'.$jenis;
+        \Storage::disk('public')->put($jalur, $isi);
+
+        return $jalur;
+    }
+
+    /**
+     * Kolom `photo` menyimpan tiga bentuk sekaligus karena umur data yang berbeda:
+     * URL absolut (data lama), jalur relatif 'absences/x.jpg' (unggahan baru), dan nama
+     * berkas telanjang 'x.jpg' (unggahan sebelum perbaikan). Ketiganya dinormalkan di
+     * sini supaya klien tidak perlu menebak folder — tebakan itulah yang sekarang
+     * ditambal di aplikasi mobile.
+     */
+    private function fotoIzinUrl(?string $photo): ?string
+    {
+        if (empty($photo)) {
+            return null;
+        }
+
+        if (filter_var($photo, FILTER_VALIDATE_URL)) {
+            return $photo;
+        }
+
+        return asset('storage/'.(str_contains($photo, '/') ? $photo : 'absences/'.$photo));
     }
 
     /**
@@ -436,21 +504,25 @@ class AttendanceController extends Controller
         $dateEnd = strtotime($request->input('date_end').' 23:59:59');
         $totalDays = floor(($dateEnd - $dateStart) / 86400) + 1;
 
-        // Handle photo upload if exists
-        $photoFilename = null;
-        if ($request->has('photo') && ! empty($request->input('photo'))) {
+        // Foto izin datang sebagai data URL (`data:image/png;base64,...`), sama seperti
+        // unggahan lain di API ini.
+        //
+        // Dua cacat diperbaiki di sini sekaligus. Pertama, awalan data URL dulu tidak
+        // dibuang sebelum base64_decode — dan awalan itu sendiri berisi karakter yang sah
+        // di base64, jadi tidak ada galat yang terlihat: berkasnya tersimpan, isinya saja
+        // yang rusak dan tidak pernah bisa dibuka. Kedua, semuanya disimpan berakhiran
+        // .jpg apa pun jenis aslinya.
+        //
+        // Yang DISIMPAN sekarang jalur relatifnya ('absences/xxx.png'), bukan nama berkas
+        // telanjang, supaya sama dengan orders_items dan klien tidak perlu menebak folder.
+        $photoPath = null;
+        if (! empty($request->input('photo'))) {
             try {
-                $base64Image = $request->input('photo');
-                $imageData = base64_decode($base64Image);
-
-                // Generate unique filename
-                $photoFilename = 'absence_'.time().'_'.uniqid().'.jpg';
-
-                // Save to storage/app/public/absences/
-                \Storage::disk('public')->put('absences/'.$photoFilename, $imageData);
+                $photoPath = $this->simpanFotoIzin($request->input('photo'));
             } catch (\Exception $e) {
-                \Log::error('Failed to save absence photo: '.$e->getMessage());
-                // Continue without photo if upload fails
+                \Log::error('Gagal menyimpan foto izin: '.$e->getMessage());
+                // Pengajuan izin tetap dibuat tanpa foto — menolak seluruh pengajuan
+                // hanya karena lampirannya gagal akan menahan orang yang sedang sakit.
             }
         }
 
@@ -462,7 +534,7 @@ class AttendanceController extends Controller
             'date_end' => $dateEnd,
             'total_days' => $totalDays,
             'note' => $request->input('note'),
-            'photo' => $photoFilename,
+            'photo' => $photoPath,
             'is_approval' => 0, // pending
             'created_by' => $user->id,
         ]);
