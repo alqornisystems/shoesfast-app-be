@@ -33,7 +33,12 @@ jobs:
           fi
           echo "Diff dari $BEFORE ke ${{ github.sha }}"
           # Abaikan file yang tak perlu ada di server (CI config, dsb)
-          EXCLUDE='^\.github/'
+          # public/storage adalah symlink ke storage/app/public dan HARUS dibuat di server
+          # (php artisan storage:link), bukan dikirim dari sini: isinya jalur absolut milik
+          # mesin pembuatnya, dan jalur itu tidak ada di server. Dikecualikan dari upload
+          # MAUPUN penghapusan — kalau ikut daftar hapus, symlink yang sudah benar di server
+          # akan dicabut dan seluruh foto berhenti bisa dibuka tanpa galat di mana pun.
+          EXCLUDE='^\.github/|^public/storage$'
           git diff --name-only --diff-filter=ACMR "$BEFORE" "${{ github.sha }}" | grep -Ev "$EXCLUDE" > changed.txt || true
           git diff --name-only --diff-filter=D    "$BEFORE" "${{ github.sha }}" | grep -Ev "$EXCLUDE" > deleted.txt || true
           echo "--- File berubah (upload) ---"; cat changed.txt || true
