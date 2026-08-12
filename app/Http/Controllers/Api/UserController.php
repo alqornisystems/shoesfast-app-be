@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
@@ -159,6 +160,41 @@ class UserController extends Controller
         return response()->json([
             'message' => 'Karyawan berhasil diperbarui.',
             'data' => $user->fresh()->load('role'),
+        ]);
+    }
+
+    /**
+     * POST /api/users/{user}/reset-password
+     *
+     * Staf yang lupa kata sandinya terkunci total — ia tidak bisa absen, dan absen adalah
+     * hal pertama yang dilakukannya pagi hari. Jalur yang sudah ada (`PUT /users/{id}`)
+     * secara teknis bisa dipakai, tapi menuntut admin mengarang sendiri kata sandinya dan
+     * mengirim seluruh badan formulir karyawan hanya untuk mengganti satu kolom.
+     *
+     * Yang dikembalikan adalah kata sandi sementara yang dibuat server. Admin membacakannya
+     * ke karyawan, lalu karyawan menggantinya lewat `PUT /auth/change-password`.
+     *
+     * Ini BUKAN pemulihan mandiri. Alur mandiri lewat OTP menuntut keputusan pemilik soal
+     * kanal pengiriman dan siapa yang menanggung risikonya, jadi tidak diputuskan di sini.
+     */
+    public function resetPassword(User $user): JsonResponse
+    {
+        // Dibuat server, bukan diketik admin: kata sandi yang diketik manusia berulang kali
+        // berakhir menjadi pola yang sama untuk semua orang.
+        $sementara = Str::password(10, true, true, false, false);
+
+        $user->update([
+            'password' => Hash::make($sementara),
+            'modified_by' => auth()->id() ?? 1,
+        ]);
+
+        // Semua sesi lama dicabut. Kalau tidak, perangkat yang sudah masuk tetap masuk —
+        // dan justru "akun ini dipakai orang lain" adalah salah satu alasan reset diminta.
+        $user->tokens()->delete();
+
+        return response()->json([
+            'message' => 'Kata sandi sementara dibuat. Sampaikan ke karyawan dan minta segera diganti.',
+            'temporary_password' => $sementara,
         ]);
     }
 

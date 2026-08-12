@@ -18,77 +18,77 @@ return new class extends Migration
     public function up(): void
     {
         // ====== ORDERS TABLE ======
-        if (!$this->indexExists('orders', 'idx_orders_date')) {
+        if (! $this->indexExists('orders', 'idx_orders_date')) {
             DB::statement('CREATE INDEX idx_orders_date ON orders(date)');
         }
-        if (!$this->indexExists('orders', 'idx_orders_status')) {
+        if (! $this->indexExists('orders', 'idx_orders_status')) {
             DB::statement('CREATE INDEX idx_orders_status ON orders(status)');
         }
-        if (!$this->indexExists('orders', 'idx_orders_branch')) {
+        if (! $this->indexExists('orders', 'idx_orders_branch')) {
             DB::statement('CREATE INDEX idx_orders_branch ON orders(projects_id)');
         }
-        if (!$this->indexExists('orders', 'idx_orders_deleted')) {
+        if (! $this->indexExists('orders', 'idx_orders_deleted')) {
             DB::statement('CREATE INDEX idx_orders_deleted ON orders(is_deleted)');
         }
-        if (!$this->indexExists('orders', 'idx_orders_date_status_deleted')) {
+        if (! $this->indexExists('orders', 'idx_orders_date_status_deleted')) {
             DB::statement('CREATE INDEX idx_orders_date_status_deleted ON orders(date, status, is_deleted)');
         }
 
         // ====== PAYMENTS TABLE ======
-        if (!$this->indexExists('payments', 'idx_payments_date')) {
+        if (! $this->indexExists('payments', 'idx_payments_date')) {
             DB::statement('CREATE INDEX idx_payments_date ON payments(date)');
         }
-        if (!$this->indexExists('payments', 'idx_payments_order')) {
+        if (! $this->indexExists('payments', 'idx_payments_order')) {
             DB::statement('CREATE INDEX idx_payments_order ON payments(orders_id)');
         }
-        if (!$this->indexExists('payments', 'idx_payments_deleted')) {
+        if (! $this->indexExists('payments', 'idx_payments_deleted')) {
             DB::statement('CREATE INDEX idx_payments_deleted ON payments(is_deleted)');
         }
-        if (!$this->indexExists('payments', 'idx_payments_date_deleted')) {
+        if (! $this->indexExists('payments', 'idx_payments_date_deleted')) {
             DB::statement('CREATE INDEX idx_payments_date_deleted ON payments(date, is_deleted)');
         }
 
         // ====== TREATMENTS TABLE ======
-        if (!$this->indexExists('treatments', 'idx_treatments_date_start')) {
+        if (! $this->indexExists('treatments', 'idx_treatments_date_start')) {
             DB::statement('CREATE INDEX idx_treatments_date_start ON treatments(date_start)');
         }
-        if (!$this->indexExists('treatments', 'idx_treatments_status')) {
+        if (! $this->indexExists('treatments', 'idx_treatments_status')) {
             DB::statement('CREATE INDEX idx_treatments_status ON treatments(status)');
         }
-        if (!$this->indexExists('treatments', 'idx_treatments_deleted')) {
+        if (! $this->indexExists('treatments', 'idx_treatments_deleted')) {
             DB::statement('CREATE INDEX idx_treatments_deleted ON treatments(is_deleted)');
         }
 
         // ====== AD_CAMPAIGNS TABLE ======
         if (Schema::hasTable('ad_campaigns')) {
-            if (!$this->indexExists('ad_campaigns', 'idx_ad_campaigns_date')) {
+            if (! $this->indexExists('ad_campaigns', 'idx_ad_campaigns_date')) {
                 DB::statement('CREATE INDEX idx_ad_campaigns_date ON ad_campaigns(date)');
             }
-            if (!$this->indexExists('ad_campaigns', 'idx_ad_campaigns_platform')) {
+            if (! $this->indexExists('ad_campaigns', 'idx_ad_campaigns_platform')) {
                 DB::statement('CREATE INDEX idx_ad_campaigns_platform ON ad_campaigns(platform)');
             }
         }
 
         // ====== EXPENSES TABLE ======
-        if (!$this->indexExists('expenses', 'idx_expenses_date')) {
+        if (! $this->indexExists('expenses', 'idx_expenses_date')) {
             DB::statement('CREATE INDEX idx_expenses_date ON expenses(date)');
         }
-        if (!$this->indexExists('expenses', 'idx_expenses_deleted')) {
+        if (! $this->indexExists('expenses', 'idx_expenses_deleted')) {
             DB::statement('CREATE INDEX idx_expenses_deleted ON expenses(is_deleted)');
         }
 
         // ====== EXPENSE_OPERATIONALS TABLE ======
         if (Schema::hasTable('expense_operationals')) {
-            if (!$this->indexExists('expense_operationals', 'idx_expense_op_deleted')) {
+            if (! $this->indexExists('expense_operationals', 'idx_expense_op_deleted')) {
                 DB::statement('CREATE INDEX idx_expense_op_deleted ON expense_operationals(is_deleted)');
             }
         }
 
         // ====== CUSTOMERS TABLE ======
-        if (!$this->indexExists('customers', 'idx_customers_phone')) {
+        if (! $this->indexExists('customers', 'idx_customers_phone')) {
             DB::statement('CREATE INDEX idx_customers_phone ON customers(phone)');
         }
-        if (!$this->indexExists('customers', 'idx_customers_deleted')) {
+        if (! $this->indexExists('customers', 'idx_customers_deleted')) {
             DB::statement('CREATE INDEX idx_customers_deleted ON customers(is_deleted)');
         }
     }
@@ -136,7 +136,8 @@ return new class extends Migration
     private function indexExists(string $table, string $index): bool
     {
         $result = DB::select("SHOW INDEX FROM {$table} WHERE Key_name = ?", [$index]);
-        return !empty($result);
+
+        return ! empty($result);
     }
 
     /**

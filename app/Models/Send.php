@@ -24,7 +24,30 @@ class Send extends Model
         'is_deleted',
         'created_by',
         'modified_by',
+        // Alur tugas lapangan: berangkat, gagal/jadwal ulang, bukti serah terima.
+        'started_at',
+        'failed_at',
+        'reason_code',
+        'fail_note',
+        'reschedule_date',
+        'proof_photo',
+        'receiver_name',
+        'proof_latitude',
+        'proof_longitude',
+        'proof_at',
     ];
+
+    /**
+     * Nilai kolom `status`. Ditulis sebagai konstanta karena angkanya tersebar di
+     * belasan tempat dan sempat ditulis sebagai "0/1" telanjang di setiap query.
+     * GAGAL adalah nilai baru — sebelumnya satu-satunya akhir sebuah tugas adalah
+     * SELESAI, sehingga kegagalan hanya menggantung sebagai tugas berjalan.
+     */
+    const STATUS_BERJALAN = 0;
+
+    const STATUS_SELESAI = 1;
+
+    const STATUS_GAGAL = 2;
 
     protected $casts = [
         'date' => 'integer',
@@ -35,6 +58,10 @@ class Send extends Model
         'updated_at' => 'integer',
         'created_by' => 'integer',
         'modified_by' => 'integer',
+        'started_at' => 'integer',
+        'failed_at' => 'integer',
+        'reschedule_date' => 'integer',
+        'proof_at' => 'integer',
     ];
 
     const UPDATED_AT = 'modified_at';

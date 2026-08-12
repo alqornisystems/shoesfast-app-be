@@ -8,15 +8,24 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Send;
 use App\Models\User;
+use App\Services\CustomerPointService;
 use App\Services\FcmService;
+use App\Services\NotifikasiTugas;
 use App\Services\ReportCacheService;
 use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class SendController extends Controller
 {
+    /**
+     * Daftar tertutup alasan kegagalan. Kalau kurir boleh mengarang alasannya, pertanyaan
+     * "kenapa pengantaran gagal" tidak akan pernah bisa dijawab dengan angka.
+     */
+    const REASON_CODES = ['customer_absent', 'wrong_address', 'rejected', 'rescheduled', 'other'];
+
     protected WhatsAppService $whatsapp;
 
     protected FcmService $fcm;
@@ -221,6 +230,12 @@ class SendController extends Controller
             }
 
             DB::commit();
+
+            // Setelah commit, bukan sebelum: notifikasi yang terkirim untuk tugas yang
+            // ternyata gagal disimpan akan mengirim kurir ke layar yang isinya tidak ada.
+            // Kegagalan FCM sendiri ditelan di dalam service — tugas tetap tersimpan
+            // walau notifikasinya tidak sampai.
+            app(NotifikasiTugas::class)->tugasBaru((int) $send->users_id, (int) $send->id);
 
             // Load relationships for response
             $send->load(['user', 'order.customer', 'orderItem']);
@@ -876,6 +891,343 @@ class SendController extends Controller
                     'selesai' => $t->done_at,
                 ])->values()
                 : [],
+        ]);
+    }
+
+    /**
+     * Tugas yang boleh disentuh pemegang token ini, atau null.
+     *
+     * Tugas milik kurir lain sengaja dijawab null -> 404, bukan 403: jawaban "ada, tapi bukan
+     * milikmu" tetap membocorkan nomor tugas mana yang hidup. (detail() di atas masih memakai
+     * 403; itu endpoint yang lebih tua, bukan maksud yang berbeda.)
+     */
+    private function findTask(Request $request, $id): ?Send
+    {
+        $query = Send::where('id', $id);
+
+        if (! $this->isAdmin($request)) {
+            $query->where('users_id', $request->user()->id);
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * Simpan foto data-URL ke storage publik, kembalikan JALUR RELATIF ("sends/xxx.jpg").
+     *
+     * Jalur, bukan nama berkas telanjang: pembacanya cukup punya satu bentuk
+     * (`asset('storage/'.$path)`) untuk semua folder — pola yang sudah dipakai
+     * OrderController::uploadBase64Image dan dibaca lagi di deliveryWaitingList().
+     * null berarti muatannya bukan gambar yang bisa didekode; pemanggil menjawab 422,
+     * karena ini data dari perangkat lapangan dan bukan kesalahan server.
+     */
+    private function saveProofPhoto(string $dataUrl): ?string
+    {
+        if (! preg_match('/^data:image\/(\w+);base64,/', $dataUrl, $type)) {
+            return null;
+        }
+
+        $data = base64_decode(str_replace(' ', '+', substr($dataUrl, strpos($dataUrl, ',') + 1)), true);
+
+        if ($data === false || $data === '') {
+            return null;
+        }
+
+        $path = 'sends/'.uniqid().'.'.strtolower($type[1]);
+        Storage::disk('public')->put($path, $data);
+
+        return $path;
+    }
+
+    /**
+     * POST /api/sends/{id}/payment
+     * Kurir menagih di depan pelanggan. Sebelum ini uangnya berpindah tangan tanpa jejak:
+     * pelanggan merasa sudah bayar, tabel `payments` tidak tahu apa-apa.
+     */
+    public function recordPayment(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'amount' => 'required|integer|min:1',
+            'method' => 'required|in:cash,transfer,qris',
+            'note' => 'nullable|string',
+        ]);
+
+        $send = $this->findTask($request, $id);
+
+        if (! $send) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
+        // Tugas gagal tidak boleh menerima uang — barangnya tidak berpindah tangan. Tugas
+        // yang sudah SELESAI sengaja MASIH boleh: kurir kerap menekan "selesai" lebih dulu
+        // lalu baru mencatat uangnya, dan menolaknya berarti uang itu hilang dari pembukuan.
+        if ($send->status === Send::STATUS_GAGAL) {
+            return response()->json([
+                'message' => 'Tugas ini sudah ditandai gagal, pembayaran tidak bisa dicatat.',
+            ], 422);
+        }
+
+        $order = $send->order;
+
+        if (! $order) {
+            return response()->json([
+                'message' => 'Pengiriman ini tidak terhubung ke pesanan mana pun.',
+            ], 422);
+        }
+
+        // Harga BOLEH belum ada — pesanan dari portal pelanggan lahir tanpa harga (lihat
+        // detail()). Kalau nol dianggap harga, sisa tagihan jadi negatif dan pembayaran
+        // apa pun tertolak dengan pesan yang membingungkan. Keadaannya disebut apa adanya.
+        if ($order->total_price === null || (int) $order->total_price === 0) {
+            return response()->json([
+                'message' => 'Harga pesanan ini belum ditentukan, jadi belum ada yang bisa ditagih.',
+            ], 422);
+        }
+
+        // Rumus sisa tagihan disalin dari detail(): dua rumus berarti layar kurir dan layar
+        // kasir suatu saat akan menyebut angka yang berbeda untuk pesanan yang sama.
+        $totalPrice = (int) $order->total_price;
+        $totalPaid = (int) Payment::where('orders_id', $order->id)->sum('nominal');
+        $credit = $totalPrice - $totalPaid;
+
+        if ((int) $validated['amount'] > $credit) {
+            return response()->json([
+                'message' => 'Nominal melebihi sisa tagihan. Sisa tagihan Rp '.number_format(max($credit, 0), 0, ',', '.').'.',
+            ], 422);
+        }
+
+        // `payments` tidak punya kolom metode pembayaran, dan menambah kolom ke tabel lama
+        // yang dibaca seluruh laporan keuangan lebih berisiko daripada nilainya: metodenya
+        // di sini hanya informatif — tidak ada rekonsiliasi yang membacanya, uangnya sudah
+        // masuk lewat jalan mana pun. Jadi ditempel ke `note` dalam bentuk terbaca manusia.
+        $labelMetode = ['cash' => 'Tunai', 'transfer' => 'Transfer', 'qris' => 'QRIS'];
+        $note = 'Bayar di tempat ('.$labelMetode[$validated['method']].')';
+
+        if (! empty($validated['note'])) {
+            $note .= ' — '.$validated['note'];
+        }
+
+        DB::transaction(fn () => Payment::create([
+            'orders_id' => $order->id,
+            'date' => time(),
+            'nominal' => (int) $validated['amount'],
+            'note' => $note,
+            'created_by' => $request->user()->id,
+        ]));
+
+        // Wajib, dan wajib DI LUAR transaksi di atas — servicenya membuka transaksinya
+        // sendiri dengan lockForUpdate. Tanpa baris ini pelanggan yang melunasi lewat kurir
+        // tidak pernah dapat poin, dan tidak ada satu pun layar yang akan memperlihatkannya.
+        app(CustomerPointService::class)->awardIfSettled((int) $order->id);
+
+        ReportCacheService::invalidate(['payments', 'receivables', 'cash-flow', 'profit-loss']);
+
+        $totalPaid += (int) $validated['amount'];
+        $credit = $totalPrice - $totalPaid;
+
+        return response()->json([
+            'total_paid' => $totalPaid,
+            'credit' => $credit,
+            'payment_status' => $credit <= 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid'),
+        ]);
+    }
+
+    /**
+     * POST /api/sends/{id}/proof
+     * Bukti serah terima: foto, nama penerima, dan koordinat saat barang diserahkan.
+     */
+    public function storeProof(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'photo' => ['required', 'string', 'regex:/^data:image\/(\w+);base64,/'],
+            'receiver_name' => 'required|string|max:100',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+        ]);
+
+        $send = $this->findTask($request, $id);
+
+        if (! $send) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
+        // Selama tugas masih berjalan, bukti boleh dikirim ulang dan menimpa yang lama —
+        // foto pertama sering buram atau salah orang. Setelah tugas ditutup (selesai/gagal)
+        // buktinya adalah catatan yang sudah jadi, bukan draf.
+        if ($send->status !== Send::STATUS_BERJALAN) {
+            return response()->json([
+                'message' => 'Bukti hanya bisa dikirim untuk tugas yang masih berjalan.',
+            ], 422);
+        }
+
+        $path = $this->saveProofPhoto($validated['photo']);
+
+        if (! $path) {
+            return response()->json(['message' => 'Foto bukti tidak bisa dibaca.'], 422);
+        }
+
+        $send->update([
+            'proof_photo' => $path,
+            'receiver_name' => $validated['receiver_name'],
+            'proof_latitude' => $validated['latitude'] ?? null,
+            'proof_longitude' => $validated['longitude'] ?? null,
+            'proof_at' => time(),
+            'modified_by' => $request->user()->id,
+        ]);
+
+        return response()->json([
+            'photo_url' => asset('storage/'.$path),
+        ]);
+    }
+
+    /**
+     * POST /api/sends/{id}/failed
+     * Tugas yang tidak bisa diselesaikan. Sebelum ini kegagalan tidak punya bentuk, jadi
+     * tugas gagal menggantung selamanya sebagai "berjalan" di daftar kantor.
+     */
+    public function markFailed(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'reason_code' => 'required|in:'.implode(',', self::REASON_CODES),
+            'note' => 'nullable|string',
+            'reschedule_date' => 'required_if:reason_code,rescheduled|nullable|date',
+            'photo' => ['nullable', 'string', 'regex:/^data:image\/(\w+);base64,/'],
+        ]);
+
+        $send = $this->findTask($request, $id);
+
+        if (! $send) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
+        // Barang yang sudah diserahkan tidak bisa "gagal" belakangan; membalik status
+        // selesai jadi gagal akan menghapus riwayat serah terima yang sah. Tugas yang
+        // sudah gagal boleh ditandai ulang — kurir mengoreksi alasan yang salah pilih.
+        if ($send->status === Send::STATUS_SELESAI) {
+            return response()->json([
+                'message' => 'Tugas yang sudah selesai tidak bisa ditandai gagal.',
+            ], 422);
+        }
+
+        $update = [
+            'status' => Send::STATUS_GAGAL,
+            'failed_at' => time(),
+            'reason_code' => $validated['reason_code'],
+            'fail_note' => $validated['note'] ?? null,
+            'reschedule_date' => ! empty($validated['reschedule_date'])
+                ? strtotime($validated['reschedule_date'])
+                : null,
+            'modified_by' => $request->user()->id,
+        ];
+
+        if (! empty($validated['photo'])) {
+            $path = $this->saveProofPhoto($validated['photo']);
+
+            if (! $path) {
+                return response()->json(['message' => 'Foto bukti tidak bisa dibaca.'], 422);
+            }
+
+            $update['proof_photo'] = $path;
+        }
+
+        $send->update($update);
+
+        return response()->json([
+            'message' => 'Tugas ditandai gagal',
+            'status' => Send::STATUS_GAGAL,
+            'failed_at' => $update['failed_at'],
+            'reschedule_date' => $update['reschedule_date'],
+        ]);
+    }
+
+    /**
+     * POST /api/sends/{id}/start
+     * Kurir menekan "berangkat". Jam berangkat inilah yang menjawab "kenapa lama".
+     */
+    public function start(Request $request, $id)
+    {
+        $send = $this->findTask($request, $id);
+
+        if (! $send) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
+        if ($send->status !== Send::STATUS_BERJALAN) {
+            return response()->json([
+                'message' => 'Tugas ini sudah tidak berjalan, jam berangkat tidak bisa dicatat.',
+            ], 422);
+        }
+
+        // Tombolnya ditekan dua-tiga kali saat sinyal buruk. Menimpa started_at akan
+        // mengganti jam berangkat yang sebenarnya dengan jam ketika sinyal kembali, jadi
+        // yang pertama menang dan tekanan berikutnya hanya membacakan ulang nilainya —
+        // 200, bukan 422: kurirnya tidak melakukan kesalahan apa pun.
+        if ($send->started_at === null) {
+            $send->update([
+                'started_at' => time(),
+                'modified_by' => $request->user()->id,
+            ]);
+        }
+
+        return response()->json([
+            'started_at' => (int) $send->started_at,
+        ]);
+    }
+
+    /**
+     * GET /api/sends/summary?date=YYYY-MM-DD
+     * Rekap sehari milik kurir yang sedang login.
+     */
+    public function summary(Request $request)
+    {
+        $request->validate([
+            'date' => 'nullable|date',
+        ]);
+
+        $start = strtotime(date('Y-m-d', $request->date ? strtotime($request->date) : time()));
+        $end = $start + 86400;
+        $userId = $request->user()->id;
+
+        // SELALU disaring ke pengguna yang login, admin sekalipun: pertanyaan yang dijawab
+        // layar ini adalah "hari ini SAYA menyelesaikan berapa", bukan rekap cabang.
+        $milikSaya = fn () => Send::where('users_id', $userId);
+
+        $completed = $milikSaya()
+            ->where('status', Send::STATUS_SELESAI)
+            ->where('modified_at', '>=', $start)
+            ->where('modified_at', '<', $end)
+            ->count();
+
+        $failed = $milikSaya()
+            ->where('status', Send::STATUS_GAGAL)
+            ->where('failed_at', '>=', $start)
+            ->where('failed_at', '<', $end)
+            ->count();
+
+        // Sengaja TANPA filter tanggal, tidak seperti dua angka di atas: `completed` dan
+        // `failed` adalah kejadian hari itu, sedangkan ini antrean yang masih menunggu.
+        // Tugas kemarin yang belum tuntas justru paling perlu terlihat hari ini; menyaringnya
+        // dengan tanggal akan menyembunyikannya tepat pada saat ia menumpuk.
+        $pending = $milikSaya()
+            ->where('status', Send::STATUS_BERJALAN)
+            ->count();
+
+        // Uang yang lewat tangan kurir ini hari itu. Subquery, bukan pluck(): daftar pesanan
+        // seorang kurir tumbuh seumur pemakaian dan tidak ada gunanya dibawa ke PHP.
+        $collected = (int) Payment::whereIn(
+            'orders_id',
+            Send::where('users_id', $userId)->select('orders_id')
+        )
+            ->where('date', '>=', $start)
+            ->where('date', '<', $end)
+            ->sum('nominal');
+
+        return response()->json([
+            'date' => date('Y-m-d', $start),
+            'completed' => $completed,
+            'failed' => $failed,
+            'pending' => $pending,
+            'collected' => $collected,
         ]);
     }
 }

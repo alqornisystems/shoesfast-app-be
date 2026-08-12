@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastController;
@@ -93,6 +94,12 @@ Route::get('customer/services', [CustomerCatalogController::class, 'index'])
 Route::get('customer/settings', [CustomerSettingController::class, 'index'])
     ->middleware('throttle:60,1');
 
+// Gerbang versi aplikasi mobile, dibaca saat splash. Publik dengan sengaja: kalau ia
+// menuntut token, aplikasi yang kontraknya sudah tidak kompatibel harus berhasil login
+// dulu sebelum boleh diberi tahu bahwa ia terlalu tua.
+Route::get('app/version', [AppVersionController::class, 'show'])
+    ->middleware('throttle:60,1');
+
 Route::middleware('auth:customer')->prefix('customer')->group(function () {
     Route::get('auth/me', [CustomerAuthController::class, 'me']);
     Route::post('auth/logout', [CustomerAuthController::class, 'logout']);
@@ -132,6 +139,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('switch-branch', [AuthController::class, 'switchBranch']);
         Route::put('profile', [AuthController::class, 'updateProfile']);
         Route::put('change-password', [AuthController::class, 'changePassword']);
+
+        // Token FCM perangkat. DELETE dipanggil saat logout supaya HP yang
+        // dipinjamkan berhenti menerima notifikasi tugas milik orang lain.
+        Route::post('device-token', [AuthController::class, 'registerDeviceToken']);
+        Route::delete('device-token', [AuthController::class, 'deleteDeviceToken']);
     });
 
     Route::get('dashboard', [DashboardController::class, 'index']);
@@ -141,6 +153,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('attendances/clock-in', [AttendanceController::class, 'clockIn']);
     Route::post('attendances/clock-out', [AttendanceController::class, 'clockOut']);
     Route::get('attendances', [AttendanceController::class, 'index']);
+    // Status per tanggal untuk kalender presensi — gabungan absensi, izin, dan kalender
+    // libur. Sebelum apiResource mana pun tidak relevan di sini, tapi tetap ditaruh
+    // sebelum rute ber-{id} agar 'daily-status' tidak tertangkap sebagai sebuah id.
+    Route::get('attendances/daily-status', [AttendanceController::class, 'dailyStatus']);
 
     // Pengajuan izin — mengajukan dan membatalkan milik sendiri terbuka untuk semua;
     // menyetujui/menolak adalah wewenang atasan, dikunci di blok SDM di bawah.
@@ -187,11 +203,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('sends/available-delivery-items', [SendController::class, 'getAvailableDeliveryItems']);
         Route::get('sends/available-couriers', [SendController::class, 'getAvailableCouriers']);
         Route::post('sends/mark-completed', [SendController::class, 'markAsCompleted']);
+        // Ringkasan hasil kerja kurir hari itu. Sebelum apiResource DAN sebelum rute
+        // ber-{id}, kalau tidak 'summary' tertangkap sebagai sebuah id.
+        Route::get('sends/summary', [SendController::class, 'summary']);
         // Rincian barang untuk kurir: pengerjaan, riwayat, kelengkapan. Tanpa harga.
         Route::get('sends/{id}/detail', [SendController::class, 'detail']);
         // Jemput ulang: dari satu pengiriman yang sudah ada dibuatkan pesanan baru sekalian
         // tugas jemputnya. Sebelum apiResource, sesuai aturan berkas ini.
         Route::post('sends/{id}/reorder', [SendController::class, 'reorder']);
+
+        /*
+        | Alur tugas lapangan. Sebelum ini satu-satunya akhir sebuah tugas adalah
+        | "selesai": uang yang ditagih kurir tidak punya jejak, kegagalan tidak punya
+        | jalur, dan tidak ada bukti serah terima untuk menengahi sengketa.
+        */
+        Route::post('sends/{id}/payment', [SendController::class, 'recordPayment']);
+        Route::post('sends/{id}/proof', [SendController::class, 'storeProof']);
+        Route::post('sends/{id}/failed', [SendController::class, 'markFailed']);
+        Route::post('sends/{id}/start', [SendController::class, 'start']);
+
         Route::apiResource('sends', SendController::class);
 
         // Barang pesanan untuk staf lapangan: kurir mencatat dan memeriksa barang di lokasi
@@ -300,6 +330,10 @@ Route::middleware('auth:sanctum')->group(function () {
     |----------------------------------------------------------------------
     */
     Route::middleware('role:Admin Super,Admin,HRD')->group(function () {
+        // Sebelum apiResource, kalau tidak 'reset-password' tertangkap sebagai {user}.
+        // Staf yang lupa kata sandinya tidak bisa absen sama sekali, dan absen adalah hal
+        // pertama yang dilakukannya pagi hari — jadi jalur ini menahan orang bekerja.
+        Route::post('users/{user}/reset-password', [UserController::class, 'resetPassword']);
         Route::apiResource('users', UserController::class);
         Route::apiResource('roles', RoleController::class);
     });

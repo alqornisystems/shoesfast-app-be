@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceAbsence;
 use App\Models\DailyNote;
+use App\Models\Holiday;
 use App\Models\Project;
+use App\Services\NotifikasiTugas;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -439,6 +441,112 @@ class AttendanceController extends Controller
     }
 
     /**
+     * GET /api/attendances/daily-status
+     *
+     * Status per tanggal untuk kalender presensi: hadir, izin, libur, akhir pekan, atau
+     * alpa. Bahannya sudah tersebar di tiga endpoint (`/attendances`, `/absences`,
+     * `/holidays`) dan aplikasi tidak bisa menyatukannya sendiri tanpa tiga permintaan
+     * plus aturan bisnis yang seharusnya tidak tinggal di klien.
+     *
+     * `is_late` SENGAJA tidak dikirim: jam masuk resmi tidak ada di database mana pun,
+     * jadi "terlambat" belum punya definisi. API lama menghitungnya dengan "jam > 8 ATAU
+     * menit >= 40", yang menandai absen 07:45 sebagai terlambat. Menampilkan angka yang
+     * salah dengan percaya diri lebih buruk daripada tidak menampilkannya.
+     */
+    public function dailyStatus(Request $request): JsonResponse
+    {
+        $request->validate([
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date'],
+        ]);
+
+        $user = $request->user();
+        $start = strtotime(date('Y-m-d', $request->filled('start_date')
+            ? strtotime($request->input('start_date'))
+            : strtotime('first day of this month')));
+        $end = strtotime(date('Y-m-d', $request->filled('end_date')
+            ? strtotime($request->input('end_date'))
+            : time()));
+
+        // Rentang dibatasi supaya satu permintaan tidak pernah membangun ribuan baris di
+        // memori — kalender hanya menampilkan sebulan.
+        if ($end < $start) {
+            return response()->json(['message' => 'Tanggal akhir mendahului tanggal mulai.'], 422);
+        }
+
+        if (($end - $start) / 86400 > 366) {
+            return response()->json(['message' => 'Rentang maksimal satu tahun.'], 422);
+        }
+
+        // Tiga sumber ditarik sekali, lalu dipetakan per tanggal. Query di dalam loop
+        // tanggal akan menghasilkan puluhan query untuk satu kalender.
+        $hadir = [];
+        foreach (Attendance::where('users_id', $user->id)
+            ->where('type', 0)
+            ->where('clock', '>=', $start)
+            ->where('clock', '<', $end + 86400)
+            ->get() as $baris) {
+            $hadir[date('Y-m-d', $baris->clock)] = $baris->clock;
+        }
+
+        $izin = [];
+        foreach (AttendanceAbsence::where('users_id', $user->id)
+            ->where('is_approval', 1)
+            ->where('is_deleted', 0)
+            ->where('date_start', '<=', $end + 86399)
+            ->where('date_end', '>=', $start)
+            ->get() as $baris) {
+            for ($t = $baris->date_start; $t <= $baris->date_end; $t += 86400) {
+                $izin[date('Y-m-d', $t)] = $this->getAbsenceTypeLabel((int) $baris->type);
+            }
+        }
+
+        // Libur milik cabang aktif DAN libur seluruh perusahaan (projects_id null) —
+        // aturan yang sama dengan HolidayController::index.
+        $cabang = app('branch.context')->getActiveBranch();
+        $libur = [];
+        foreach (Holiday::withoutBranchScope()
+            ->where('date', '>=', $start)
+            ->where('date', '<=', $end + 86399)
+            ->when($cabang !== null, function ($q) use ($cabang) {
+                $q->where(function ($sub) use ($cabang) {
+                    $sub->where('projects_id', $cabang)->orWhereNull('projects_id');
+                });
+            })
+            ->get() as $baris) {
+            $libur[date('Y-m-d', $baris->date)] = $baris->name;
+        }
+
+        $hariIni = strtotime('today');
+        $data = [];
+
+        for ($t = $start; $t <= $end; $t += 86400) {
+            $tanggal = date('Y-m-d', $t);
+
+            // Urutan pemeriksaan menentukan artinya. Hadir menang atas segalanya: orang
+            // yang tetap masuk di hari libur memang hadir, dan menandainya "libur" akan
+            // menghapus kerjanya dari catatan.
+            if (isset($hadir[$tanggal])) {
+                $data[] = ['date' => $tanggal, 'status' => 'present', 'clock_in' => $hadir[$tanggal]];
+            } elseif (isset($izin[$tanggal])) {
+                $data[] = ['date' => $tanggal, 'status' => 'absence', 'absence_type' => $izin[$tanggal]];
+            } elseif (isset($libur[$tanggal])) {
+                $data[] = ['date' => $tanggal, 'status' => 'holiday', 'name' => $libur[$tanggal]];
+            } elseif (date('N', $t) === '7') {
+                $data[] = ['date' => $tanggal, 'status' => 'weekend'];
+            } elseif ($t > $hariIni) {
+                // Hari yang belum terjadi bukan alpa. Tanpa cabang ini, membuka kalender
+                // tanggal 3 akan mengecat sisa bulan merah semua.
+                $data[] = ['date' => $tanggal, 'status' => 'upcoming'];
+            } else {
+                $data[] = ['date' => $tanggal, 'status' => 'absent'];
+            }
+        }
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
      * Simpan data URL gambar ke storage publik, kembalikan jalur relatifnya.
      *
      * @throws \Exception kalau yang dikirim bukan data URL gambar
@@ -558,6 +666,8 @@ class AttendanceController extends Controller
             'modified_by' => $request->user()->id,
         ]);
 
+        app(NotifikasiTugas::class)->izinDiputuskan($absence->users_id, $absence->id, true);
+
         return response()->json([
             'message' => 'Pengajuan izin berhasil disetujui',
             'data' => $absence,
@@ -576,6 +686,8 @@ class AttendanceController extends Controller
             'is_approval' => 2, // rejected
             'modified_by' => $request->user()->id,
         ]);
+
+        app(NotifikasiTugas::class)->izinDiputuskan($absence->users_id, $absence->id, false);
 
         return response()->json([
             'message' => 'Pengajuan izin ditolak',

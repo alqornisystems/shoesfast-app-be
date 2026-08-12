@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\DeviceToken;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -275,6 +276,51 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Password berhasil diubah. Silakan login kembali.',
         ]);
+    }
+
+    // POST /api/auth/device-token
+    public function registerDeviceToken(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'token' => ['required', 'string', 'max:255'],
+            'platform' => ['nullable', 'in:android,ios'],
+        ]);
+
+        // users_id selalu dari token sesi, tidak pernah dari badan permintaan.
+        //
+        // Cocokkan berdasarkan token saja, tanpa scope `notDeleted`: kolom token
+        // unique, jadi baris lama yang sudah dihapus lunak harus dihidupkan
+        // kembali, bukan disisipkan lagi. Dan kalau token itu terdaftar atas
+        // pengguna LAIN, kepemilikannya dipindahkan ke pengguna sekarang — FCM
+        // memindahkan token ketika sebuah perangkat dipakai orang lain, dan
+        // tanpa ini notifikasi tugas akan terus terkirim ke pemilik lama.
+        DeviceToken::withoutGlobalScope('notDeleted')->updateOrCreate(
+            ['token' => $validated['token']],
+            [
+                'users_id' => $request->user()->id,
+                'platform' => $validated['platform'] ?? null,
+                'is_deleted' => 0,
+            ],
+        );
+
+        return response()->json(['message' => 'Token perangkat tersimpan.']);
+    }
+
+    // DELETE /api/auth/device-token
+    // Dipakai saat logout supaya perangkat yang dipinjamkan berhenti menerima
+    // notifikasi.
+    public function deleteDeviceToken(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'token' => ['required', 'string'],
+        ]);
+
+        // Hanya token milik pengguna yang sedang login.
+        DeviceToken::where('users_id', $request->user()->id)
+            ->where('token', $validated['token'])
+            ->update(['is_deleted' => 1]);
+
+        return response()->json(['message' => 'Token perangkat dihapus.']);
     }
 
     /**
