@@ -42,9 +42,17 @@ class FotoBase64
     public static function simpan(string $nilai, string $folder, ?string $namaDasar = null): string
     {
         if (! preg_match('/^data:image\/(\w+);base64,/', $nilai, $cocok)) {
-            // Jalur relatif atau URL absolut milik data lama dibiarkan lewat, sehingga
-            // helper ini aman dipasang di jalur yang sudah berjalan.
-            return $nilai;
+            // Bukan unggahan baru. Dua kemungkinan, dan keduanya dibiarkan lewat:
+            //
+            // 1. URL milik data lama (https://app.shoesfastind.com/img/...) — biarkan
+            //    apa adanya, sudah tidak ada berkas aslinya untuk diproses ulang.
+            // 2. URL storage kita sendiri yang dikirim balik klien. Ini terjadi karena
+            //    layar edit menyeed formulirnya dengan nilai yang tadi dibaca, lalu
+            //    mengirimkannya kembali saat simpan. Kalau ditelan bulat-bulat, kolomnya
+            //    berubah dari jalur menjadi URL utuh — dan domain yang tertulis di
+            //    database persis masalah yang bikin API lama harus menambal tiap
+            //    pembacaan dengan str_replace saat domain pindah. Dikembalikan ke jalur.
+            return self::jalurDariUrlSendiri($nilai);
         }
 
         $jenis = strtolower($cocok[1]) === 'jpeg' ? 'jpg' : strtolower($cocok[1]);
@@ -64,6 +72,21 @@ class FotoBase64
         Storage::disk('public')->put($jalur, $isi);
 
         return $jalur;
+    }
+
+    /**
+     * URL storage milik sendiri dikembalikan jadi jalur relatif; sisanya dibiarkan.
+     *
+     * Hanya awalan kita sendiri yang dikupas — URL domain lain (termasuk domain lama
+     * yang berkasnya memang tinggal di sana) tidak disentuh sama sekali.
+     */
+    private static function jalurDariUrlSendiri(string $nilai): string
+    {
+        $awalan = rtrim(asset('storage'), '/').'/';
+
+        return str_starts_with($nilai, $awalan)
+            ? substr($nilai, strlen($awalan))
+            : $nilai;
     }
 
     /** Kebalikannya: jalur apa pun jadi URL yang bisa dipasang di <img>. */

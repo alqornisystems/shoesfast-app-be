@@ -104,9 +104,32 @@ class UkuranFotoTest extends TestCase
     public function test_jalur_lama_dan_url_absolut_dibiarkan(): void
     {
         $this->assertSame('users/lama.jpg', FotoBase64::simpan('users/lama.jpg', 'users'));
+
+        // URL data lama — domainnya bahkan sudah tidak dipakai lagi. Dibiarkan apa adanya;
+        // tidak ada berkas asli untuk diproses ulang.
         $this->assertSame(
-            'https://app.shoesfast.id/img/x.png',
-            FotoBase64::simpan('https://app.shoesfast.id/img/x.png', 'users')
+            'https://app.shoesfastind.com/img/customers/customer-1749096040.png',
+            FotoBase64::simpan('https://app.shoesfastind.com/img/customers/customer-1749096040.png', 'users')
         );
+    }
+
+    /**
+     * Layar edit menyeed formulirnya dengan URL yang tadi dibaca, lalu mengirimkannya
+     * kembali saat simpan. Kalau ditelan bulat-bulat, kolomnya berubah dari jalur jadi
+     * URL utuh — dan domain yang tertulis di database persis masalah yang membuat API
+     * lama harus menambal tiap pembacaan dengan str_replace saat domain pindah.
+     */
+    public function test_url_storage_sendiri_dikembalikan_jadi_jalur(): void
+    {
+        $urlSendiri = asset('storage/users/foto.jpg');
+
+        $this->assertSame('users/foto.jpg', FotoBase64::simpan($urlSendiri, 'users'));
+    }
+
+    public function test_url_menjadi_dan_kembali_dari_jalur_secara_konsisten(): void
+    {
+        $jalur = 'sends/bukti.jpg';
+
+        $this->assertSame($jalur, FotoBase64::simpan(FotoBase64::url($jalur), 'sends'));
     }
 }

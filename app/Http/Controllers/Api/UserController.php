@@ -48,7 +48,7 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
-                'photo' => $user->photo,
+                'photo' => FotoBase64::url($user->photo),
                 'roles_id' => $user->roles_id,
                 'role_name' => $user->role?->name,
                 'projects_id' => $user->projects_id,
@@ -96,6 +96,11 @@ class UserController extends Controller
             'modified_by' => auth()->id() ?? 1,
         ]);
 
+        // Dinormalkan di memori saja (tidak disimpan): layar karyawan menyeed formulir
+        // edit dari nilai yang dibacanya, jadi yang dikirim balik harus berupa URL yang
+        // bisa langsung dipasang di <img>, bukan jalur telanjang.
+        $user->photo = FotoBase64::url($user->photo);
+
         return response()->json([
             'message' => 'Karyawan berhasil ditambahkan.',
             'data' => $user->load('role'),
@@ -113,7 +118,7 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
-                'photo' => $user->photo,
+                'photo' => FotoBase64::url($user->photo),
                 'roles_id' => $user->roles_id,
                 'role_name' => $user->role?->name,
                 'projects_id' => $user->projects_id,
@@ -163,9 +168,12 @@ class UserController extends Controller
 
         $user->update($data);
 
+        $segar = $user->fresh()->load('role');
+        $segar->photo = FotoBase64::url($segar->photo);
+
         return response()->json([
             'message' => 'Karyawan berhasil diperbarui.',
-            'data' => $user->fresh()->load('role'),
+            'data' => $segar,
         ]);
     }
 
