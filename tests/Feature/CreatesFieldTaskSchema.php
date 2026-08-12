@@ -27,7 +27,12 @@ trait CreatesFieldTaskSchema
             $t->increments('id');
             $t->string('name')->nullable();
             $t->string('phone')->nullable();
+            $t->string('email')->nullable();
+            $t->string('password')->nullable();
             $t->text('photo')->nullable();
+            $t->integer('modified_by')->nullable();
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
             $t->integer('roles_id')->nullable();
             $t->integer('projects_id')->nullable();
             $t->integer('is_deleted')->default(0);

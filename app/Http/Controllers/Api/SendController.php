@@ -577,14 +577,16 @@ class SendController extends Controller
         }
 
         $sends = $query->get();
+        $statusBayar = $this->statusPembayaranPerOrder($sends);
 
-        $sends->transform(function ($send) {
+        $sends->transform(function ($send) use ($statusBayar) {
             return [
                 'id' => $send->id,
                 'date' => $send->date,
                 'type' => $send->type,
                 'type_label' => $send->type == 0 ? 'Pickup' : 'Delivery',
                 'status' => $send->status,
+                'payment_status' => $statusBayar[$send->orders_id] ?? null,
                 // Layar Barang di aplikasi kurir dibuka dengan orders_id
                 // (GET /orders/{orderId}/items). Tanpa kunci ini tombolnya tidak
                 // pernah bisa muncul — kode invoice saja tidak cukup.
@@ -653,14 +655,16 @@ class SendController extends Controller
         }
 
         $sends = $query->get();
+        $statusBayar = $this->statusPembayaranPerOrder($sends);
 
-        $sends->transform(function ($send) {
+        $sends->transform(function ($send) use ($statusBayar) {
             return [
                 'id' => $send->id,
                 'date' => $send->date,
                 'type' => $send->type,
                 'type_label' => $send->type == 0 ? 'Pickup' : 'Delivery',
                 'status' => $send->status,
+                'payment_status' => $statusBayar[$send->orders_id] ?? null,
                 // Layar Barang di aplikasi kurir dibuka dengan orders_id
                 // (GET /orders/{orderId}/items). Tanpa kunci ini tombolnya tidak
                 // pernah bisa muncul — kode invoice saja tidak cukup.
@@ -909,6 +913,53 @@ class SendController extends Controller
      * milikmu" tetap membocorkan nomor tugas mana yang hidup. (detail() di atas masih memakai
      * 403; itu endpoint yang lebih tua, bukan maksud yang berbeda.)
      */
+    /**
+     * Status pembayaran per orders_id untuk sekumpulan pengiriman.
+     *
+     * Nominalnya sengaja TIDAK ikut ke daftar — harga bukan urusan kurir. Yang dibawa
+     * hanya cukup untuk membedakan "sudah lunas" dari "masih menagih" di kartu, supaya
+     * kurir tidak perlu membuka detail satu per satu hanya untuk tahu perlu menagih.
+     *
+     * Dua query untuk seluruh halaman, bukan dua query per baris.
+     *
+     * @param  \Illuminate\Support\Collection  $sends
+     * @return array<int, string>
+     */
+    private function statusPembayaranPerOrder($sends): array
+    {
+        $orderIds = $sends->pluck('orders_id')->filter()->unique()->values();
+
+        if ($orderIds->isEmpty()) {
+            return [];
+        }
+
+        $harga = Order::whereIn('id', $orderIds)->pluck('total_price', 'id');
+        $terbayar = Payment::whereIn('orders_id', $orderIds)
+            ->groupBy('orders_id')
+            ->selectRaw('orders_id, SUM(nominal) as total')
+            ->pluck('total', 'orders_id');
+
+        $hasil = [];
+
+        foreach ($orderIds as $id) {
+            $totalPrice = $harga[$id] ?? null;
+
+            // Harga NULL/0 bukan lunas — pesanan portal pelanggan lahir tanpa harga.
+            if ($totalPrice === null || (int) $totalPrice === 0) {
+                $hasil[$id] = 'unpriced';
+
+                continue;
+            }
+
+            $paid = (int) ($terbayar[$id] ?? 0);
+            $credit = (int) $totalPrice - $paid;
+
+            $hasil[$id] = $credit <= 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
+        }
+
+        return $hasil;
+    }
+
     private function findTask(Request $request, $id): ?Send
     {
         $query = Send::where('id', $id);

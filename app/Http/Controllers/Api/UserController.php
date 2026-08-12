@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\FotoBase64;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -81,7 +82,12 @@ class UserController extends Controller
             'email' => $validated['email'],
             'phone' => $this->normalizePhone($validated['phone'] ?? null),
             'password' => Hash::make($validated['password']),
-            'photo' => $validated['photo'] ?? null,
+            // Data URL disimpan ke disk; yang masuk kolom hanya jalurnya. Layar
+            // karyawan mengizinkan berkas sampai 2 MB, dan sebagai base64 itu ~2,7 juta
+            // karakter — jauh melewati batas kolom TEXT, dipotong MySQL tanpa galat.
+            'photo' => ! empty($validated['photo'])
+                ? FotoBase64::simpan($validated['photo'], 'users')
+                : null,
             'roles_id' => $validated['roles_id'],
             'projects_id' => $validated['projects_id'] ?? null,
             'payment_date' => $validated['payment_date'] ?? null,
@@ -152,7 +158,7 @@ class UserController extends Controller
 
         // Only update photo if provided
         if (isset($validated['photo'])) {
-            $data['photo'] = $validated['photo'];
+            $data['photo'] = FotoBase64::simpan($validated['photo'], 'users');
         }
 
         $user->update($data);

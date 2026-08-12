@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DeviceToken;
 use App\Models\User;
+use App\Support\FotoBase64;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -221,29 +222,42 @@ class AuthController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'email' => ['required', 'email', 'max:50'],
+            // Nullable, bukan required: sebagian staf lapangan tidak punya email, dan
+            // memaksanya membuat layar profil mereka tidak pernah bisa disimpan.
+            'email' => ['nullable', 'email', 'max:50'],
             'photo' => ['nullable', 'string'],
         ]);
 
+        // `phone` sengaja TIDAK ada di daftar. Nomor itu adalah identitas login; kalau
+        // pemiliknya bisa menggantinya sendiri, salah ketik satu digit mengunci dirinya
+        // keluar dan tidak ada yang bisa dilakukannya dari dalam aplikasi. Perubahan
+        // nomor lewat admin (PUT /api/users/{id}), yang juga menjaga bentroknya.
+
+        $foto = $user->photo;
+
+        if (array_key_exists('photo', $validated)) {
+            // null berarti hapus. Data URL disimpan ke disk lalu yang masuk kolom adalah
+            // jalurnya — menulis base64 mentah ke kolom TEXT berarti MySQL memotongnya
+            // diam-diam dan fotonya rusak tanpa satu pun galat.
+            $foto = $validated['photo'] === null
+                ? null
+                : FotoBase64::simpan($validated['photo'], 'users');
+        }
+
         $user->update([
             'name' => $validated['name'],
-            'email' => $validated['email'],
-            'photo' => $validated['photo'] ?? $user->photo,
+            'email' => $validated['email'] ?? $user->email,
+            'photo' => $foto,
             'modified_by' => $user->id,
         ]);
 
+        // Bentuk yang sama persis dengan login dan /auth/me, jadi klien boleh memakainya
+        // langsung tanpa memanggil /auth/me lagi. Sebelumnya balasan di sini punya
+        // susunannya sendiri — dua bentuk untuk data yang sama adalah cara paling pasti
+        // membuat sesi dan tampilan berselisih.
         return response()->json([
             'message' => 'Profil berhasil diperbarui.',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'photo' => $user->photo,
-                'role' => $user->role?->name,
-                'projects_id' => $user->projects_id,
-                'project_name' => $user->project?->name,
-            ],
+            'user' => $this->presentUser($user->fresh()->load(['role', 'project'])),
         ]);
     }
 
