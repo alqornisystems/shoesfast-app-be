@@ -9,6 +9,7 @@ use App\Models\DailyNote;
 use App\Models\Holiday;
 use App\Models\Project;
 use App\Services\NotifikasiTugas;
+use App\Support\FotoBase64;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -553,24 +554,11 @@ class AttendanceController extends Controller
      */
     private function simpanFotoIzin(string $dataUrl): string
     {
-        if (! preg_match('/^data:image\/(\w+);base64,/', $dataUrl, $cocok)) {
+        if (! preg_match('/^data:image\/(\w+);base64,/', $dataUrl)) {
             throw new \Exception('Format gambar tidak dikenali');
         }
 
-        $jenis = strtolower($cocok[1]) === 'jpeg' ? 'jpg' : strtolower($cocok[1]);
-        // str_replace: sebagian klien mengirim data URL lewat query string, dan '+'
-        // berubah jadi spasi di perjalanan.
-        $base64 = str_replace(' ', '+', substr($dataUrl, strpos($dataUrl, ',') + 1));
-        $isi = base64_decode($base64, true);
-
-        if ($isi === false) {
-            throw new \Exception('base64 tidak valid');
-        }
-
-        $jalur = 'absences/absence_'.time().'_'.uniqid().'.'.$jenis;
-        \Storage::disk('public')->put($jalur, $isi);
-
-        return $jalur;
+        return FotoBase64::simpan($dataUrl, 'absences');
     }
 
     /**

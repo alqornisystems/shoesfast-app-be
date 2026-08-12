@@ -13,6 +13,7 @@ use App\Services\FcmService;
 use App\Services\NotifikasiTugas;
 use App\Services\ReportCacheService;
 use App\Services\WhatsAppService;
+use App\Support\FotoBase64;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -982,20 +983,15 @@ class SendController extends Controller
      */
     private function saveProofPhoto(string $dataUrl): ?string
     {
-        if (! preg_match('/^data:image\/(\w+);base64,/', $dataUrl, $type)) {
+        if (! preg_match('/^data:image\/(\w+);base64,/', $dataUrl)) {
             return null;
         }
 
-        $data = base64_decode(str_replace(' ', '+', substr($dataUrl, strpos($dataUrl, ',') + 1)), true);
-
-        if ($data === false || $data === '') {
+        try {
+            return FotoBase64::simpan($dataUrl, 'sends');
+        } catch (\Throwable $e) {
             return null;
         }
-
-        $path = 'sends/'.uniqid().'.'.strtolower($type[1]);
-        Storage::disk('public')->put($path, $data);
-
-        return $path;
     }
 
     /**

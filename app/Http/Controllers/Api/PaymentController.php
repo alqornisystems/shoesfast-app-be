@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Services\CustomerPointService;
 use App\Services\ReportCacheService;
+use App\Support\FotoBase64;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -193,39 +194,21 @@ class PaymentController extends Controller
     /**
      * Save base64 image to storage
      */
+    /**
+     * Bukti pembayaran. Pendekodean, pelurusan orientasi, dan penyesuaian lebar ke 1080px
+     * dikerjakan FotoBase64 bersama seluruh jalur unggah lain.
+     *
+     * Awalan "storage/" pada nilai kembalian DIPERTAHANKAN: baris pembayaran lama sudah
+     * menyimpannya dalam bentuk itu, dan mengubah bentuknya sekarang membuat foto lama
+     * dan baru butuh dua aturan pembacaan yang berbeda.
+     */
     private function saveBase64Image($base64String, $folder = 'payments')
     {
-        // Check if it's a valid base64 image
-        if (preg_match('/^data:image\/(\w+);base64,/', $base64String, $type)) {
-            $base64String = substr($base64String, strpos($base64String, ',') + 1);
-            $type = strtolower($type[1]); // jpg, png, gif
-
-            $base64String = str_replace(' ', '+', $base64String);
-            $imageData = base64_decode($base64String);
-
-            if ($imageData === false) {
-                throw new \Exception('Base64 decode failed');
-            }
-
-            // Generate unique filename
-            $fileName = uniqid().'.'.$type;
-            $directory = storage_path("app/public/{$folder}");
-
-            // Create directory if not exists
-            if (! file_exists($directory)) {
-                mkdir($directory, 0755, true);
-            }
-
-            $filePath = "{$directory}/{$fileName}";
-
-            // Save file
-            file_put_contents($filePath, $imageData);
-
-            // Return relative path
-            return "storage/{$folder}/{$fileName}";
+        if (! preg_match('/^data:image\/(\w+);base64,/', $base64String)) {
+            return null;
         }
 
-        return null;
+        return 'storage/'.FotoBase64::simpan($base64String, $folder);
     }
 
     /**
