@@ -93,6 +93,14 @@ class SendController extends Controller
                 'date' => $send->date,
                 'status' => $send->status,
                 'type' => $send->type,
+                // Terisi hanya untuk tugas berstatus GAGAL. Tanpa ini kantor melihat
+                // tugas gagal tanpa satu pun keterangan kenapa — dan itu mengembalikan
+                // masalah yang jalur kegagalan ini dibuat untuk menyelesaikannya.
+                'reason_code' => $send->reason_code,
+                'fail_note' => $send->fail_note,
+                'reschedule_date' => $send->reschedule_date,
+                'failed_at' => $send->failed_at,
+                'started_at' => $send->started_at,
                 'user' => [
                     'id' => $send->user->id ?? null,
                     'name' => $send->user->name ?? null,
