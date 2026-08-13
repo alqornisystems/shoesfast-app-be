@@ -122,7 +122,21 @@ CREATE TABLE IF NOT EXISTS `device_tokens` (
 `token` sengaja UNIQUE: FCM memindahkan token ketika sebuah perangkat dipakai orang lain,
 dan tanpa kunci unik notifikasi tugas akan ikut terkirim ke pemilik lama.
 
-## 5. Baris `settings` untuk gerbang versi aplikasi
+## 5. Jam mulai pengerjaan teknisi
+
+Setara migrasi `2026_08_13_000003_add_started_at_to_treatments_table`. Dibutuhkan
+`POST /api/treatments/{id}/start`.
+
+```sql
+ALTER TABLE `treatments`
+  ADD COLUMN IF NOT EXISTS `started_at` INT(11) NULL;
+```
+
+Kolom baru, **bukan** memakai ulang `date_start`. Yang itu jadwal rencana: ia mengurutkan
+waiting list sekaligus menjadi penyebut perhitungan `progress`, jadi menimpanya saat
+teknisi menekan "mulai" akan menggeser antrean dan membuat progress melompat mundur ke nol.
+
+## 6. Baris `settings` untuk gerbang versi aplikasi
 
 Bukan perubahan skema, tapi tanpa ini gerbang versi aplikasi mobile tidak melakukan apa-apa.
 Nilai di bawah aman — `0.0.0` berarti gerbangnya mati dan tidak mengunci siapa pun.
@@ -146,6 +160,7 @@ Periksa hasilnya:
 
 ```sql
 SHOW COLUMNS FROM `sends` LIKE 'proof_%';
+SHOW COLUMNS FROM `treatments` LIKE 'started_at';
 SHOW TABLES LIKE 'device_tokens';
 SELECT `key`, `value` FROM `settings` WHERE `key` LIKE 'app_%';
 ```
@@ -158,9 +173,10 @@ INSERT IGNORE INTO `migrations` (`migration`, `batch`) VALUES
   ('2026_07_28_000001_add_customer_portal_columns',        (SELECT COALESCE(MAX(b.batch),0)+1 FROM (SELECT batch FROM migrations) b)),
   ('2026_07_28_000002_create_rewards_tables',              (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_13_000001_add_field_task_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b)),
-  ('2026_08_13_000002_create_device_tokens_table',         (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b));
+  ('2026_08_13_000002_create_device_tokens_table',         (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
+  ('2026_08_13_000003_add_started_at_to_treatments_table',  (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b));
 ```
 
-Sebenarnya keempat migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
+Sebenarnya kelima migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
 menjalankan `php artisan migrate` setelah SQL ini pun tidak akan merusak apa pun — ia hanya
 akan melewati yang sudah ada.
