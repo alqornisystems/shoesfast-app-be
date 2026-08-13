@@ -567,6 +567,8 @@ class SendController extends Controller
     {
         $request->validate([
             'type' => ['nullable', 'integer', 'in:0,1'], // 0=pickup, 1=delivery
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
         ]);
 
         $query = Send::with([
@@ -578,7 +580,11 @@ class SendController extends Controller
             'project',
         ])
             ->where('status', 0) // In progress only
-            ->orderBy('date', 'DESC');
+            // `id` sebagai pemecah seri: tanpa urutan yang stabil, dua baris bertanggal
+            // sama bisa bertukar tempat antar permintaan, sehingga satu baris muncul dua
+            // kali di halaman berikutnya sementara baris lain hilang sama sekali.
+            ->orderBy('date', 'DESC')
+            ->orderBy('id', 'DESC');
 
         // Kurir hanya melihat pengantaran miliknya sendiri; admin melihat semuanya.
         if (! $this->isAdmin($request)) {
@@ -590,10 +596,28 @@ class SendController extends Controller
             $query->where('type', $request->type);
         }
 
-        $sends = $query->get();
-        $statusBayar = $this->statusPembayaranPerOrder($sends);
+        // Pencarian dikerjakan server sejak daftar ini dipaginasi. Menyaring di klien
+        // hanya akan menyaring halaman yang sedang terbuka, sehingga kotak cari berbohong:
+        // tugas yang dicari ada di halaman tiga dan hasilnya tampak kosong.
+        if ($request->filled('search')) {
+            $cari = $request->input('search');
+            $query->where(function ($q) use ($cari) {
+                $q->whereHas('order', function ($qOrder) use ($cari) {
+                    $qOrder->where('code', 'LIKE', "%{$cari}%")
+                        ->orWhereHas('customer', function ($qCustomer) use ($cari) {
+                            $qCustomer->where('name', 'LIKE', "%{$cari}%")
+                                ->orWhere('phone', 'LIKE', "%{$cari}%");
+                        });
+                });
+            });
+        }
 
-        $sends->transform(function ($send) use ($statusBayar) {
+        // Paginator, bentuk yang sama persis dengan GET /treatments — satu pola untuk
+        // seluruh daftar, bukan dua yang harus diingat mana dipakai di mana.
+        $sends = $query->paginate($request->input('per_page', 15));
+        $statusBayar = $this->statusPembayaranPerOrder($sends->getCollection());
+
+        $sends->getCollection()->transform(function ($send) use ($statusBayar) {
             return [
                 'id' => $send->id,
                 'date' => $send->date,
@@ -619,9 +643,7 @@ class SendController extends Controller
             ];
         });
 
-        return response()->json([
-            'data' => $sends,
-        ]);
+        return response()->json($sends);
     }
 
     /**
@@ -634,6 +656,8 @@ class SendController extends Controller
             'type' => ['nullable', 'integer', 'in:0,1'], // 0=pickup, 1=delivery
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
         ]);
 
         $query = Send::with([
@@ -645,7 +669,11 @@ class SendController extends Controller
             'project',
         ])
             ->where('status', 1) // Completed only
-            ->orderBy('date', 'DESC');
+            // `id` sebagai pemecah seri: tanpa urutan yang stabil, dua baris bertanggal
+            // sama bisa bertukar tempat antar permintaan, sehingga satu baris muncul dua
+            // kali di halaman berikutnya sementara baris lain hilang sama sekali.
+            ->orderBy('date', 'DESC')
+            ->orderBy('id', 'DESC');
 
         // Kurir hanya melihat pengantaran miliknya sendiri; admin melihat semuanya.
         if (! $this->isAdmin($request)) {
@@ -655,6 +683,22 @@ class SendController extends Controller
         // Filter by type if provided
         if ($request->has('type') && $request->type !== null) {
             $query->where('type', $request->type);
+        }
+
+        // Pencarian dikerjakan server sejak daftar ini dipaginasi. Menyaring di klien
+        // hanya akan menyaring halaman yang sedang terbuka, sehingga kotak cari berbohong:
+        // tugas yang dicari ada di halaman tiga dan hasilnya tampak kosong.
+        if ($request->filled('search')) {
+            $cari = $request->input('search');
+            $query->where(function ($q) use ($cari) {
+                $q->whereHas('order', function ($qOrder) use ($cari) {
+                    $qOrder->where('code', 'LIKE', "%{$cari}%")
+                        ->orWhereHas('customer', function ($qCustomer) use ($cari) {
+                            $qCustomer->where('name', 'LIKE', "%{$cari}%")
+                                ->orWhere('phone', 'LIKE', "%{$cari}%");
+                        });
+                });
+            });
         }
 
         // Filter by date range
@@ -668,10 +712,12 @@ class SendController extends Controller
             $query->where('date', '<=', $endDate);
         }
 
-        $sends = $query->get();
-        $statusBayar = $this->statusPembayaranPerOrder($sends);
+        // Paginator, bentuk yang sama persis dengan GET /treatments — satu pola untuk
+        // seluruh daftar, bukan dua yang harus diingat mana dipakai di mana.
+        $sends = $query->paginate($request->input('per_page', 15));
+        $statusBayar = $this->statusPembayaranPerOrder($sends->getCollection());
 
-        $sends->transform(function ($send) use ($statusBayar) {
+        $sends->getCollection()->transform(function ($send) use ($statusBayar) {
             return [
                 'id' => $send->id,
                 'date' => $send->date,
@@ -698,9 +744,7 @@ class SendController extends Controller
             ];
         });
 
-        return response()->json([
-            'data' => $sends,
-        ]);
+        return response()->json($sends);
     }
 
     /**
