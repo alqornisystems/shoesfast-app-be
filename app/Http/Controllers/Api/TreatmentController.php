@@ -149,6 +149,7 @@ class TreatmentController extends Controller
                 'note' => $treatment->note,
                 'is_partnerships' => $treatment->is_partnerships,
                 'done_at' => $treatment->done_at,
+                'started_at' => $treatment->started_at,
                 'created_at' => $treatment->created_at,
                 'previous_treatment_done_at' => $previousTreatment ? $previousTreatment->done_at : null,
                 'is_first_treatment' => $previousTreatment === null,
@@ -431,6 +432,48 @@ class TreatmentController extends Controller
     /**
      * Calculate progress percentage
      */
+    /**
+     * POST /api/treatments/{id}/start
+     *
+     * Teknisi menekan "mulai kerjakan". Sebelum ini "ambil" dan "mulai" adalah peristiwa
+     * yang sama, sehingga pekerjaan yang diambil pagi lalu baru disentuh sore tidak bisa
+     * dibedakan dari yang langsung dikerjakan.
+     *
+     * Yang distempel `started_at`, BUKAN `date_start`: kolom itu jadwal rencana yang
+     * dipakai mengurutkan waiting list dan menghitung `progress`.
+     */
+    public function start(Request $request, $id)
+    {
+        $treatment = Treatment::where('id', $id)->first();
+
+        if (! $treatment) {
+            return response()->json(['message' => 'Pekerjaan tidak ditemukan.'], 404);
+        }
+
+        // Admin boleh menstempel milik siapa pun; teknisi hanya miliknya sendiri.
+        if (! $this->isAdmin($request) && (int) $treatment->users_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Pekerjaan tidak ditemukan.'], 404);
+        }
+
+        if ((int) $treatment->status >= 2) {
+            return response()->json([
+                'message' => 'Pekerjaan ini sudah selesai, jam mulai tidak bisa dicatat.',
+            ], 422);
+        }
+
+        // Idempoten, alasan yang sama dengan /sends/{id}/start: tombolnya ditekan
+        // berkali-kali saat sinyal buruk, dan yang pertama adalah jam yang sebenarnya.
+        if ($treatment->started_at === null) {
+            $treatment->started_at = time();
+            $treatment->modified_by = $request->user()->id;
+            $treatment->save();
+        }
+
+        return response()->json([
+            'started_at' => (int) $treatment->started_at,
+        ]);
+    }
+
     private function calculateProgress($dateStart, $dateEnd)
     {
         $now = time();

@@ -310,6 +310,19 @@ class SendController extends Controller
     {
         $send = Send::findOrFail($id);
 
+        // Kurir hanya boleh menyunting tugas MILIKNYA atau yang belum berpemilik.
+        //
+        // Tanpa pagar ini, rute ini menjadi jalan merebut: users_id memang ditimpa dengan
+        // diri sendiri untuk non-admin (lihat di bawah), tapi tanpa memeriksa siapa
+        // pemilik sebelumnya — jadi kurir bisa memindahkan tugas kurir lain ke dirinya
+        // hanya dengan menebak sebuah id, dan tidak ada yang akan tahu. Mengambil tugas
+        // antrean punya jalurnya sendiri sekarang: POST /sends/{id}/claim.
+        if (! $this->isAdmin($request)
+            && $send->users_id !== null
+            && (int) $send->users_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
         $validated = $request->validate([
             'users_id' => 'required|exists:users,id', // Make courier required on update
             'date' => 'sometimes|date',
@@ -914,6 +927,50 @@ class SendController extends Controller
      * milikmu" tetap membocorkan nomor tugas mana yang hidup. (detail() di atas masih memakai
      * 403; itu endpoint yang lebih tua, bukan maksud yang berbeda.)
      */
+    /**
+     * POST /api/sends/{id}/claim
+     *
+     * Kurir mengambil satu tugas dari antrean jemput/antar — langsung jadi miliknya,
+     * tanpa menunggu kantor menugaskan. Padanan `POST /treatments/claim` untuk teknisi.
+     *
+     * Sebelum ini satu-satunya jalan menugaskan diri sendiri adalah lewat rute edit
+     * (`PUT /sends/{id}`), yang menuntut seluruh badan formulir DAN tidak memeriksa
+     * apakah tugasnya sudah dipegang orang — jadi kurir bisa merebut tugas kurir lain
+     * tanpa siapa pun tahu.
+     */
+    public function claimTask(Request $request, $id)
+    {
+        $send = Send::where('id', $id)->first();
+
+        if (! $send) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
+        if ($send->status !== Send::STATUS_BERJALAN) {
+            return response()->json([
+                'message' => 'Tugas ini sudah tidak berjalan.',
+            ], 422);
+        }
+
+        // Sudah dipegang orang: jangan rebut. Sama seperti TreatmentController::claim.
+        if ($send->users_id !== null && (int) $send->users_id !== (int) $request->user()->id) {
+            return response()->json([
+                'message' => 'Tugas ini sudah diambil kurir lain.',
+            ], 422);
+        }
+
+        $send->update([
+            'users_id' => $request->user()->id,
+            'modified_by' => $request->user()->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Tugas berhasil diambil.',
+            'id' => $send->id,
+            'users_id' => (int) $send->users_id,
+        ]);
+    }
+
     /**
      * Status pembayaran per orders_id untuk sekumpulan pengiriman.
      *

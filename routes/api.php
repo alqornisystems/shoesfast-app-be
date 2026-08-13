@@ -191,6 +191,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // Teknisi/kurir mengambil pekerjaan dari waiting list — langsung jadi miliknya.
         Route::post('treatments/claim', [TreatmentController::class, 'claim']);
         Route::put('treatments/{id}/status', [TreatmentController::class, 'updateStatus']);
+        // Teknisi menekan "mulai kerjakan". Menstempel started_at, bukan date_start —
+        // yang itu jadwal rencana yang dipakai mengurutkan antrean dan menghitung progress.
+        Route::post('treatments/{id}/start', [TreatmentController::class, 'start']);
         Route::put('treatments/{id}/update', [TreatmentController::class, 'update']);
         Route::get('treatments/available-technicians', [TreatmentController::class, 'getAvailableTechnicians']);
 
@@ -221,6 +224,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('sends/{id}/proof', [SendController::class, 'storeProof']);
         Route::post('sends/{id}/failed', [SendController::class, 'markFailed']);
         Route::post('sends/{id}/start', [SendController::class, 'start']);
+        // Ambil satu tugas dari antrean jemput/antar — padanan treatments/claim.
+        Route::post('sends/{id}/claim', [SendController::class, 'claimTask']);
 
         Route::apiResource('sends', SendController::class);
 

@@ -27,6 +27,8 @@ class Treatment extends Model
         'is_partnerships',
         'is_deleted',
         'done_at',
+        // Jam teknisi benar-benar mulai. Beda dari `date_start` yang jadwal rencana.
+        'started_at',
         'created_by',
         'modified_by',
     ];
@@ -34,6 +36,7 @@ class Treatment extends Model
     protected $casts = [
         'status' => 'integer',
         'date_start' => 'integer',
+        'started_at' => 'integer',
         'date_end' => 'integer',
         'price' => 'integer',
         'is_partnerships' => 'integer',
