@@ -153,7 +153,7 @@ class OrderEditingTest extends TestCase
         ]);
 
         $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
-            'services' => [$lama->id, $baru->id],
+            'add_services' => [$baru->id],
         ])->assertOk();
 
         $harga = Treatment::withoutGlobalScope('branch')
@@ -163,46 +163,46 @@ class OrderEditingTest extends TestCase
 
         // Harga dari katalog, tidak pernah dari permintaan.
         $this->assertSame(195000, (int) $harga);
+
+        // Yang lama tetap ada. Menambah tidak pernah menghapus.
+        $this->assertSame(2, Treatment::withoutGlobalScope('branch')
+            ->where('orders_items_id', $item->id)->count());
+    }
+
+    /** Layanan yang sama boleh dua kali: dua pasang sol, dua kali cuci. */
+    public function test_layanan_yang_sama_boleh_ditambahkan_dua_kali(): void
+    {
+        $item = $this->barang('Sepatu', status: 1);
+        $service = $this->layanan('Cuci', 75000);
+
+        $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
+            'add_services' => [$service->id, $service->id],
+        ])->assertOk();
+
+        $this->assertSame(2, Treatment::withoutGlobalScope('branch')
+            ->where('orders_items_id', $item->id)->count());
     }
 
     /**
-     * Pekerjaan yang sudah selesai tidak ikut tercabut saat daftar layanan disamakan.
-     * Teknisi yang sudah mengerjakannya tetap berhak tercatat, dan menghapus barisnya
-     * berarti pekerjaan itu hilang dari laporan seolah tidak pernah terjadi.
+     * Endpoint ini TIDAK BISA mencabut layanan, dan itu disengaja. Kalau daftar yang
+     * dikirim klien menentukan nasib baris yang sudah ada, satu ketukan salah mencabut
+     * pekerjaan yang sudah diantrekan teknisi tanpa pelanggan tahu apa yang hilang.
      */
-    public function test_layanan_yang_sudah_dikerjakan_tidak_ikut_tercabut(): void
+    public function test_layanan_lama_tidak_pernah_tercabut(): void
     {
         $item = $this->barang('Sepatu', status: 1);
-        $selesai = $this->layanan('Cuci', 75000);
+        $service = $this->layanan('Cuci', 75000);
 
-        $treatment = Treatment::withoutGlobalScope('branch')->create([
-            'projects_id' => 1, 'orders_items_id' => $item->id, 'services_id' => $selesai->id,
-            'price' => 75000, 'status' => 2, 'done_at' => time() - 3600,
-        ]);
-
-        // Daftar dikosongkan — tapi yang sudah selesai harus tetap ada.
-        $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
-            'services' => [],
-        ])->assertOk();
-
-        $this->assertSame(0, (int) Treatment::withoutGlobalScopes()->find($treatment->id)->is_deleted);
-    }
-
-    public function test_layanan_yang_masih_mengantre_bisa_dibatalkan(): void
-    {
-        $item = $this->barang('Sepatu');
-        $service = $this->layanan();
-
-        $treatment = Treatment::withoutGlobalScope('branch')->create([
+        $antre = Treatment::withoutGlobalScope('branch')->create([
             'projects_id' => 1, 'orders_items_id' => $item->id, 'services_id' => $service->id,
-            'price' => 50000, 'status' => 0,
+            'price' => 75000, 'status' => 0,
         ]);
 
         $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
-            'services' => [],
+            'add_services' => [],
         ])->assertOk();
 
-        $this->assertSame(1, (int) Treatment::withoutGlobalScopes()->find($treatment->id)->is_deleted);
+        $this->assertSame(0, (int) Treatment::withoutGlobalScopes()->find($antre->id)->is_deleted);
     }
 
     // ── Hapus barang ─────────────────────────────────────────────────────────

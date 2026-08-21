@@ -219,6 +219,57 @@ class OrderProgressTest extends TestCase
         );
     }
 
+    /**
+     * Tautan lacak menempel pada CAKUPANNYA.
+     *
+     * Kurir yang berangkat membawa seluruh pesanan tampil di atas halaman; yang membawa
+     * satu barang saja tampil di kartu barang itu. Menaruh yang kedua di atas membuat
+     * pelanggan mengira semua barangnya sedang di jalan, padahal dua masih di rak.
+     */
+    public function test_lacak_menempel_pada_cakupannya(): void
+    {
+        $c = $this->pelanggan();
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $order = $this->pesanan($c);
+
+        $a = $this->barang($order, 'Sepatu A', 100000, 2);
+        $this->barang($order, 'Sepatu B', 100000, 1);
+
+        Send::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => $a->id,
+            'users_id' => 3, 'date' => time(), 'type' => 1, 'status' => 0,
+            'tracking_token' => str_repeat('a', 40),
+            'tracking_expires_at' => time() + 3600,
+        ]);
+
+        $d = $this->detail($order);
+        $items = collect($d['items'])->keyBy('name');
+
+        $this->assertNull($d['tracking']);
+        $this->assertSame(str_repeat('a', 40), $items['Sepatu A']['progress']['tracking']['token']);
+        $this->assertNull($items['Sepatu B']['progress']['tracking']);
+    }
+
+    public function test_lacak_seluruh_pesanan_tampil_di_tingkat_pesanan(): void
+    {
+        $c = $this->pelanggan();
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $order = $this->pesanan($c);
+        $this->barang($order, 'Sepatu A', 100000, 2);
+
+        Send::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => null,
+            'users_id' => 3, 'date' => time(), 'type' => 1, 'status' => 0,
+            'tracking_token' => str_repeat('b', 40),
+            'tracking_expires_at' => time() + 3600,
+        ]);
+
+        $d = $this->detail($order);
+
+        $this->assertSame(str_repeat('b', 40), $d['tracking']['token']);
+        $this->assertNull($d['items'][0]['progress']['tracking']);
+    }
+
     /** Kurir tidak berangkat hari Minggu. Menerimanya diam-diam berarti menjanjikan penjemputan yang tidak terjadi. */
     public function test_tanggal_jemput_hari_minggu_ditolak(): void
     {

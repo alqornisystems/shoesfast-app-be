@@ -87,7 +87,7 @@ class OrderItemController extends Controller
                 'checkbox' => ItemChecklist::serialize((int) $validated['type'], $validated['checkbox'] ?? []),
             ]);
 
-            $this->syncTreatments($item, $validated['services'] ?? [], $order);
+            $this->tambahTreatments($item, $validated['services'] ?? [], $order);
 
             if ($validated['arrival']['method'] === 'jemput') {
                 Send::withoutGlobalScope('branch')->create([
@@ -126,8 +126,12 @@ class OrderItemController extends Controller
             'note' => ['sometimes', 'nullable', 'string'],
             'checkbox' => ['sometimes', 'nullable', 'array'],
             'checkbox.*' => ['boolean'],
-            'services' => ['sometimes', 'array', 'max:10'],
-            'services.*' => ['integer', 'exists:services,id'],
+            // MENAMBAH, bukan mengganti. Daftar yang dikirim ditambahkan ke layanan
+            // yang sudah ada, tidak menggantikannya. Penggantian menyeluruh berarti
+            // satu ketukan salah bisa mencabut pekerjaan yang sudah diantrekan
+            // teknisi, dan pelanggan tidak punya cara tahu apa yang barusan hilang.
+            'add_services' => ['sometimes', 'array', 'max:10'],
+            'add_services.*' => ['integer', 'exists:services,id'],
         ]);
 
         if (array_key_exists('name', $validated) && ! $izin['can_rename']) {
@@ -136,7 +140,7 @@ class OrderItemController extends Controller
             ], 422);
         }
 
-        if (array_key_exists('services', $validated) && ! $izin['can_change_services']) {
+        if (array_key_exists('add_services', $validated) && ! $izin['can_change_services']) {
             return response()->json([
                 'message' => 'Barang ini sudah selesai. Untuk pekerjaan tambahan, buat pesanan baru.',
             ], 422);
@@ -162,8 +166,8 @@ class OrderItemController extends Controller
                 $item->update($isian);
             }
 
-            if (array_key_exists('services', $validated)) {
-                $this->syncTreatments($item, $validated['services'], $order);
+            if (! empty($validated['add_services'])) {
+                $this->tambahTreatments($item, $validated['add_services'], $order);
             }
         });
 
@@ -203,63 +207,53 @@ class OrderItemController extends Controller
     }
 
     /**
-     * Menyamakan daftar layanan barang ini dengan pilihan pelanggan.
+     * Menambahkan layanan ke barang ini. Yang sudah ada TIDAK disentuh.
      *
-     * Treatment yang SUDAH jalan atau sudah selesai tidak disentuh sama sekali —
-     * pekerjaan yang sudah dikerjakan tidak bisa dibatalkan dengan menghapus barisnya,
-     * dan teknisi yang sudah mengerjakannya tetap berhak tercatat.
+     * Sengaja menambah, bukan menyamakan. Menyamakan berarti daftar yang dikirim klien
+     * menentukan nasib baris yang sudah ada — dan satu ketukan salah bisa mencabut
+     * pekerjaan yang sudah diantrekan teknisi tanpa pelanggan tahu apa yang hilang.
+     * Menambah tidak pernah bisa menghancurkan apa pun.
+     *
+     * Layanan yang sama boleh masuk dua kali: dua pasang sol, dua kali cuci. Kalau
+     * dianggap duplikat lalu dilewati, pelanggan yang memang butuh dua kali kerja
+     * hanya dapat satu tanpa penjelasan.
      *
      * @param  list<int>  $serviceIds
      */
-    private function syncTreatments(OrderItem $item, array $serviceIds, Order $order): void
+    private function tambahTreatments(OrderItem $item, array $serviceIds, Order $order): void
     {
-        $antre = Treatment::withoutGlobalScope('branch')
+        // Antrean disambung dari pekerjaan terakhir yang sudah dijadwalkan, bukan dari
+        // hari ini: menaruh layanan tambahan di tanggal yang sama dengan yang sedang
+        // dikerjakan membuat dua pekerjaan atas satu barang tumpang tindih di papan
+        // teknisi.
+        $sebelumnya = (int) Treatment::withoutGlobalScope('branch')
             ->where('orders_items_id', $item->id)
-            ->where('status', 0)
-            ->whereNull('done_at')
-            ->get();
+            ->max('date_end') ?: null;
 
-        $diminta = collect($serviceIds)->countBy();
-        $adaSekarang = $antre->groupBy('services_id');
+        foreach ($serviceIds as $serviceId) {
+            $service = Service::withoutGlobalScope('branch')->find($serviceId);
 
-        // Yang tidak lagi diminta: dicabut, tapi hanya dari yang masih mengantre.
-        foreach ($adaSekarang as $serviceId => $baris) {
-            $sisaDiminta = (int) ($diminta[$serviceId] ?? 0);
-
-            foreach ($baris->slice($sisaDiminta) as $treatment) {
-                $treatment->update(['is_deleted' => 1]);
+            if (! $service) {
+                continue;
             }
-        }
 
-        $mulaiDari = max(time(), (int) $order->date);
-        $sebelumnya = null;
+            $mulai = $sebelumnya === null
+                ? max(time(), (int) $order->date)
+                : strtotime('+1 day', $sebelumnya);
+            $selesai = strtotime('+'.(int) $service->estimation.' day', $mulai);
 
-        foreach ($diminta as $serviceId => $jumlah) {
-            $kurang = $jumlah - ($adaSekarang[$serviceId] ?? collect())->count();
+            Treatment::withoutGlobalScope('branch')->create([
+                'projects_id' => $order->projects_id,
+                'orders_items_id' => $item->id,
+                'services_id' => $service->id,
+                // Harga dari katalog, tidak pernah dari permintaan.
+                'price' => (int) $service->price,
+                'date_start' => $mulai,
+                'date_end' => $selesai,
+                'status' => 0,
+            ]);
 
-            for ($i = 0; $i < $kurang; $i++) {
-                $service = Service::withoutGlobalScope('branch')->find($serviceId);
-
-                if (! $service) {
-                    continue;
-                }
-
-                $mulai = $sebelumnya === null ? $mulaiDari : strtotime('+1 day', $sebelumnya);
-                $selesai = strtotime('+'.(int) $service->estimation.' day', $mulai);
-
-                Treatment::withoutGlobalScope('branch')->create([
-                    'projects_id' => $order->projects_id,
-                    'orders_items_id' => $item->id,
-                    'services_id' => $service->id,
-                    // Harga dari katalog, tidak pernah dari permintaan.
-                    'price' => (int) $service->price,
-                    'date_start' => $mulai,
-                    'date_end' => $selesai,
-                    'status' => 0,
-                ]);
-
-                $sebelumnya = $selesai;
-            }
+            $sebelumnya = $selesai;
         }
     }
 

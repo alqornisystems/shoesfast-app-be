@@ -145,6 +145,11 @@ class OrderProgress
             // bisa diambil juga — dan itu memang benar: kasir tidak punya angka.
             'can_take' => $state === self::SIAP && $harga > 0 && $sisa === 0,
             'permissions' => self::permissions($state),
+            // Tautan lacak khusus barang ini — ada kalau kurirnya berangkat membawa
+            // barang ini saja. Yang berangkat membawa seluruh pesanan tidak muncul di
+            // sini melainkan di atas halaman: satu kurir satu perjalanan, dan
+            // menaruhnya di tiga kartu barang membuatnya terbaca seperti tiga kurir.
+            'tracking' => $this->pelacakan($item),
             'history' => $this->history($item),
         ];
     }
@@ -310,6 +315,31 @@ class OrderProgress
         return $treatment->user?->name
             ? 'Dikerjakan '.$treatment->user->name
             : null;
+    }
+
+    /**
+     * Sesi pelacakan yang khusus membawa barang ini.
+     *
+     * @return array{token: string, type: int, expires_at: int}|null
+     */
+    private function pelacakan(OrderItem $item): ?array
+    {
+        $send = $this->sends->first(fn (Send $s) => (int) $s->orders_items_id === $item->id
+            && (int) $s->status === 0
+            && $s->tracking_token
+            && (int) $s->tracking_expires_at > time());
+
+        if (! $send) {
+            return null;
+        }
+
+        return [
+            'token' => $send->tracking_token,
+            // 0 = jemput, 1 = antar. Kalimat di layar berbeda: yang satu kurir datang
+            // mengambil, yang satu mengantar pulang.
+            'type' => (int) $send->type,
+            'expires_at' => (int) $send->tracking_expires_at,
+        ];
     }
 
     private function penjemputan(): ?Send

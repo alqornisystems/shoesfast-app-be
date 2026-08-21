@@ -213,6 +213,9 @@ trait CreatesCustomerSchema
             $t->integer('modified_at')->nullable();
             $t->integer('created_by')->nullable();
             $t->integer('modified_by')->nullable();
+            // Sesi pelacakan kurir — tautan yang dibuka pelanggan.
+            $t->string('tracking_token')->nullable();
+            $t->integer('tracking_expires_at')->nullable();
         });
 
         Schema::create('guarantees', function (Blueprint $t) {

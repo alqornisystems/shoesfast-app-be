@@ -261,6 +261,10 @@ class OrderController extends Controller
         $send = Send::withoutGlobalScopes()
             ->where('orders_id', $order->id)
             ->where('is_deleted', 0)
+            // Hanya yang membawa SELURUH pesanan. Kurir yang berangkat membawa satu
+            // barang saja tautannya tinggal di kartu barang itu — di atas halaman ia
+            // terbaca seolah semua barang sedang di jalan.
+            ->whereNull('orders_items_id')
             ->where('status', Send::STATUS_BERJALAN)
             ->whereNotNull('tracking_token')
             ->where('tracking_expires_at', '>', time())
