@@ -12,6 +12,8 @@ use App\Models\Service;
 use App\Models\Treatment;
 use App\Services\PickupZoneService;
 use App\Support\Base64Image;
+use App\Support\OrderProgress;
+use App\Support\ServiceDay;
 use App\Support\WarrantyWindow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -94,14 +96,40 @@ class OrderController extends Controller
             ->orderByDesc('id')
             ->paginate($perPage);
 
-        $paginator->getCollection()->transform(fn (Order $order) => [
-            'id' => $order->id,
-            'code' => $order->code,
-            'date' => $order->date,
-            'status' => (int) $order->status,
-            'status_label' => self::STATUS_LABELS[(int) $order->status] ?? 'Tidak diketahui',
-            'total_price' => (int) $order->total_price,
-        ]);
+        // Hitung barang siap per pesanan dalam SATU query, bukan membangun OrderProgress
+        // untuk tiap baris daftar. Yang dibutuhkan di sini cuma angkanya; riwayat lengkap
+        // dan posisi barang menunggu sampai pesanannya benar-benar dibuka.
+        $rekap = OrderItem::withoutGlobalScope('branch')
+            ->selectRaw('orders_id, COUNT(*) as total, SUM(status = 2) as siap')
+            ->whereIn('orders_id', $paginator->getCollection()->pluck('id'))
+            ->where('status', '!=', 3)
+            ->groupBy('orders_id')
+            ->get()
+            ->keyBy('orders_id');
+
+        $paginator->getCollection()->transform(function (Order $order) use ($rekap) {
+            $baris = $rekap->get($order->id);
+            $total = (int) ($baris->total ?? 0);
+            $siap = (int) ($baris->siap ?? 0);
+
+            return [
+                'id' => $order->id,
+                'code' => $order->code,
+                'date' => $order->date,
+                'status' => (int) $order->status,
+                // "Siap diambil" hanya kalau SEMUA barangnya siap. Satu pesanan bisa
+                // berisi tiga pasang sepatu yang selesai di hari berbeda, dan label
+                // tunggal menyembunyikan bahwa yang pertama sudah boleh diambil.
+                'status_label' => match (true) {
+                    $total > 0 && $siap === $total => 'Siap diambil',
+                    $siap > 0 => "Sebagian siap diambil ({$siap} dari {$total})",
+                    default => self::STATUS_LABELS[(int) $order->status] ?? 'Tidak diketahui',
+                },
+                'items_ready' => $siap,
+                'items_total' => $total,
+                'total_price' => (int) $order->total_price,
+            ];
+        });
 
         return response()->json($paginator);
     }
@@ -200,9 +228,21 @@ class OrderController extends Controller
         }
 
         $items = OrderItem::withoutGlobalScope('branch')
-            ->with(['treatments' => fn ($q) => $q->withoutGlobalScope('branch'), 'treatments.service'])
+            ->with([
+                'treatments' => fn ($q) => $q->withoutGlobalScope('branch'),
+                'treatments.service',
+                // Nama teknisi dan mitra ikut dimuat: "siapa yang mengerjakan sepatu
+                // saya" adalah pertanyaan yang selama ini hanya bisa dijawab lewat
+                // WhatsApp, dan jawabannya sudah ada di database sejak awal.
+                'treatments.user',
+                'treatments.partnership',
+            ])
             ->where('orders_id', $order->id)
             ->get();
+
+        $order->loadMissing('project');
+        $progress = new OrderProgress($order, $items);
+        $ringkasan = $progress->summary();
 
         $totalPaid = (int) Payment::withoutGlobalScope('branch')
             ->where('orders_id', $order->id)
@@ -213,7 +253,16 @@ class OrderController extends Controller
             'code' => $order->code,
             'date' => $order->date,
             'status' => (int) $order->status,
-            'status_label' => self::STATUS_LABELS[(int) $order->status] ?? 'Tidak diketahui',
+            // Label DITURUNKAN dari barang-barangnya, bukan dibaca dari orders.status.
+            // "Siap diambil" untuk pesanan yang dua dari tiga barangnya masih di bengkel
+            // adalah janji yang tidak dipenuhi di kasir.
+            // Pesanan tanpa barang belum punya apa pun untuk diturunkan, jadi label
+            // lamanya yang dipakai — termasuk pemetaan status 3 ke "Selesai", karena
+            // 2.448 pesanan berstatus 3 justru lunas dibayar, bukan dibatalkan.
+            'status_label' => $ringkasan['total'] > 0
+                ? $ringkasan['label']
+                : (self::STATUS_LABELS[(int) $order->status] ?? 'Tidak diketahui'),
+            'progress' => $ringkasan,
             // Sama seperti invoice(): harga yang belum ditentukan dikirim null, bukan 0.
             // Nol membuat sisa tagihan ikut nol, dan layar membacanya sebagai lunas.
             'total_price' => $order->total_price === null || (int) $order->total_price === 0
@@ -225,7 +274,7 @@ class OrderController extends Controller
                 : (int) $order->total_price - $totalPaid,
             'pickup_address' => $order->pickup_address,
             'pickup_maps' => $order->pickup_maps,
-            'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item, $order))->values(),
+            'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item, $order, $progress))->values(),
             'timeline' => $this->timeline($order, $items),
             'tracking' => $this->pelacakan($order),
         ]);
@@ -309,6 +358,22 @@ class OrderController extends Controller
             return response()->json([
                 'message' => 'Titik peta belum diisi. Lengkapi alamat di profil dulu.',
             ], 422);
+        }
+
+        // Kurir tidak berangkat hari Minggu dan tanggal merah. Menerima tanggalnya
+        // diam-diam berarti menjanjikan penjemputan yang tidak akan terjadi, dan
+        // pelanggan baru tahu saat menunggu seharian tanpa ada yang datang.
+        if (! empty($validated['pickup']['date'])) {
+            $tanggal = strtotime($validated['pickup']['date']);
+            $tutup = ServiceDay::closedReason($tanggal);
+
+            if ($tutup !== null) {
+                return response()->json([
+                    'message' => $tutup.'. Pilih hari lain, misalnya '
+                        .date('j F Y', ServiceDay::nextOpen($tanggal + 86400)).'.',
+                    'errors' => ['pickup.date' => [$tutup.', kurir tidak berangkat.']],
+                ], 422);
+            }
         }
 
         // Pengerjaan paling cepat dimulai saat barangnya sampai. Kalau pelanggan
@@ -542,7 +607,7 @@ class OrderController extends Controller
         ]);
     }
 
-    private function presentItem(OrderItem $item, ?Order $order = null): array
+    private function presentItem(OrderItem $item, ?Order $order = null, ?OrderProgress $progress = null): array
     {
         return [
             'id' => $item->id,
@@ -561,6 +626,8 @@ class OrderController extends Controller
             // aturannya sendiri. Tombol yang muncul lalu ditolak saat ditekan lebih
             // buruk daripada tombol yang tidak pernah muncul.
             'claim' => $order ? WarrantyWindow::status($order, $item) : null,
+            // Keadaan, posisi, tagihan, dan riwayat barang ini — semuanya per barang.
+            'progress' => $progress?->item($item),
             'treatments' => $item->treatments->map(fn ($treatment) => [
                 'name' => $treatment->service?->name,
                 'price' => (int) $treatment->price === 0 ? null : (int) $treatment->price,

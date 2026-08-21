@@ -15,7 +15,8 @@ trait CreatesCustomerSchema
     protected function createCustomerSchema(): void
     {
         $tables = [
-            'projects', 'customers', 'orders', 'orders_items', 'services',
+            'projects', 'customers', 'users', 'partnerships', 'holidays',
+            'orders', 'orders_items', 'services',
             'treatments', 'payments', 'sends', 'guarantees', 'rewards',
             'reward_redemptions', 'settings', 'personal_access_tokens',
         ];
@@ -110,6 +111,39 @@ trait CreatesCustomerSchema
             $t->integer('modified_at')->nullable();
             $t->integer('created_by')->nullable();
             $t->integer('modified_by')->nullable();
+        });
+
+        // Nama teknisi dan mitra ikut ditampilkan di perjalanan pesanan.
+        Schema::create('users', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('projects_id')->nullable();
+            $t->string('name')->nullable();
+            $t->string('email')->nullable();
+            $t->string('password')->nullable();
+            $t->tinyInteger('is_deleted')->default(0);
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
+        });
+
+        Schema::create('partnerships', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('projects_id')->default(1);
+            $t->string('name')->nullable();
+            $t->tinyInteger('is_deleted')->default(0);
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
+        });
+
+        // Kurir tidak berangkat di tanggal merah, dan ServiceDay membacanya dari sini.
+        Schema::create('holidays', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('projects_id')->nullable();
+            $t->integer('date')->nullable();
+            $t->string('name')->nullable();
+            $t->text('description')->nullable();
+            $t->tinyInteger('is_deleted')->default(0);
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
         });
 
         Schema::create('services', function (Blueprint $t) {

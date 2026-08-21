@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
+use App\Support\ServiceDay;
 use Illuminate\Http\JsonResponse;
 
 class SettingController extends Controller
@@ -21,6 +22,13 @@ class SettingController extends Controller
     {
         $rows = Setting::whereIn('key', self::PUBLIC_KEYS)->pluck('value', 'key');
 
-        return response()->json(['data' => $rows]);
+        return response()->json([
+            'data' => $rows,
+            // Tanggal tutup dikirim, bukan aturannya. Portal cukup mematikan tanggal
+            // yang disebut di sini — kalau aturannya yang dikirim, kalender portal dan
+            // penolakan server suatu saat akan berbeda pendapat, dan pelanggan yang
+            // memilih tanggal yang tampak boleh akan ditolak tanpa tahu kenapa.
+            'closed_dates' => ServiceDay::closedDates(strtotime('today')),
+        ]);
     }
 }
