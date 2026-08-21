@@ -45,6 +45,11 @@ trait CreatesFieldTaskSchema
             $t->string('phone')->nullable();
             $t->text('address')->nullable();
             $t->text('maps')->nullable();
+            // Titik peta yang ditaruh pelanggan sendiri lewat portal. Tipe sama dengan
+            // produksi — skema test yang menyimpang pernah meloloskan bug melewati
+            // seluruh suite sampai meledak di server.
+            $t->decimal('latitude', 10, 8)->nullable();
+            $t->decimal('longitude', 11, 8)->nullable();
             $t->integer('is_member')->default(0);
             $t->integer('points')->default(0);
             $t->integer('is_deleted')->default(0);

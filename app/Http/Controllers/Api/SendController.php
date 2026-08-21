@@ -637,6 +637,16 @@ class SendController extends Controller
                 'customer_phone' => $send->order->customer->phone ?? null,
                 'customer_address' => $send->order->customer->address ?? null,
                 'customer_maps' => $send->order->customer->maps ?? null,
+                // Koordinat sebagai ANGKA, bukan hanya URL. `customer_maps` kebetulan
+                // memuat @lat,lng, dan mengurainya dari string berhasil sampai suatu hari
+                // formatnya berubah lalu peta menaruh tujuan di tengah laut. Diisi
+                // pelanggan sendiri lewat pemilih peta di portal; null kalau belum pernah.
+                'customer_latitude' => isset($send->order->customer->latitude)
+                    ? (float) $send->order->customer->latitude
+                    : null,
+                'customer_longitude' => isset($send->order->customer->longitude)
+                    ? (float) $send->order->customer->longitude
+                    : null,
                 'item_name' => $send->type == 1 ? ($send->orderItem->name ?? null) : null,
                 'project_name' => $send->project->name ?? null,
                 'created_at' => $send->created_at,
@@ -737,6 +747,16 @@ class SendController extends Controller
                 'customer_phone' => $send->order->customer->phone ?? null,
                 'customer_address' => $send->order->customer->address ?? null,
                 'customer_maps' => $send->order->customer->maps ?? null,
+                // Koordinat sebagai ANGKA, bukan hanya URL. `customer_maps` kebetulan
+                // memuat @lat,lng, dan mengurainya dari string berhasil sampai suatu hari
+                // formatnya berubah lalu peta menaruh tujuan di tengah laut. Diisi
+                // pelanggan sendiri lewat pemilih peta di portal; null kalau belum pernah.
+                'customer_latitude' => isset($send->order->customer->latitude)
+                    ? (float) $send->order->customer->latitude
+                    : null,
+                'customer_longitude' => isset($send->order->customer->longitude)
+                    ? (float) $send->order->customer->longitude
+                    : null,
                 'item_name' => $send->type == 1 ? ($send->orderItem->name ?? null) : null,
                 'project_name' => $send->project->name ?? null,
                 'created_at' => $send->created_at,

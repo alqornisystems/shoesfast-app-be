@@ -120,6 +120,53 @@ class PaginasiPengirimanTest extends TestCase
         $this->assertCount(20, array_unique(array_merge($idSatu, $idDua)), 'Ada baris yang hilang.');
     }
 
+    /**
+     * Koordinat tujuan dikirim sebagai angka, bukan hanya URL Google Maps.
+     *
+     * Mengurai @lat,lng dari string URL berhasil sampai suatu hari formatnya berubah dan
+     * peta menaruh tujuan di tengah laut — dan yang mengurai akan berbeda antara halaman
+     * pelanggan dan aplikasi kurir, lalu berbeda hasilnya.
+     */
+    public function test_baris_membawa_koordinat_tujuan_sebagai_angka(): void
+    {
+        $this->actingAsKurir();
+
+        $pelanggan = \App\Models\Customer::create([
+            'projects_id' => 1,
+            'name' => 'Budi',
+            'phone' => '81200001111',
+            'latitude' => -7.9553004,
+            'longitude' => 112.5873766,
+        ]);
+
+        $order = Order::create([
+            'projects_id' => 1, 'customers_id' => $pelanggan->id, 'code' => 'INVKOORD',
+            'date' => time(), 'status' => 0, 'total_price' => 100000,
+        ]);
+        Send::create([
+            'projects_id' => 1, 'users_id' => self::KURIR, 'orders_id' => $order->id,
+            'date' => time(), 'status' => Send::STATUS_BERJALAN, 'type' => 1,
+        ]);
+
+        $baris = $this->getJson('/api/sends/in-progress')->assertStatus(200)->json('data.0');
+
+        $this->assertIsFloat($baris['customer_latitude']);
+        $this->assertEqualsWithDelta(-7.9553004, $baris['customer_latitude'], 0.0000001);
+        $this->assertEqualsWithDelta(112.5873766, $baris['customer_longitude'], 0.0000001);
+    }
+
+    /** Pelanggan yang belum pernah menaruh titik peta tetap boleh punya tugas. */
+    public function test_koordinat_null_kalau_pelanggan_belum_menaruh_titik(): void
+    {
+        $this->actingAsKurir();
+        $this->buatTugas(1);
+
+        $baris = $this->getJson('/api/sends/in-progress')->assertStatus(200)->json('data.0');
+
+        $this->assertNull($baris['customer_latitude']);
+        $this->assertNull($baris['customer_longitude']);
+    }
+
     /** Isi tiap baris tidak berubah — hanya pembungkusnya. */
     public function test_isi_baris_tetap_sama_termasuk_status_pembayaran(): void
     {
