@@ -118,9 +118,7 @@ class OrderController extends Controller
             'data' => $unik->map(fn (OrderItem $item) => [
                 'name' => $item->name,
                 'type' => (int) $item->type,
-                'photo' => $item->photo
-                    ? (filter_var($item->photo, FILTER_VALIDATE_URL) ? $item->photo : asset('storage/'.$item->photo))
-                    : null,
+                'photo' => \App\Support\Base64Image::url($item->photo),
                 'last_at' => $item->created_at,
             ])->values(),
         ]);
@@ -375,9 +373,7 @@ class OrderController extends Controller
             'id' => $item->id,
             'name' => $item->name,
             'type' => (int) $item->type,
-            'photo' => $item->photo
-                ? (filter_var($item->photo, FILTER_VALIDATE_URL) ? $item->photo : asset('storage/'.$item->photo))
-                : null,
+            'photo' => \App\Support\Base64Image::url($item->photo),
             'kelengkapan' => $this->kelengkapan($item),
             'note' => $item->note,
             'treatments' => $item->treatments->map(fn ($treatment) => [

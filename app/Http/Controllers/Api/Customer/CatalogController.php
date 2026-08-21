@@ -28,6 +28,6 @@ class CatalogController extends Controller
     // URL absolut diteruskan apa adanya.
     private function photoUrl(string $photo): string
     {
-        return filter_var($photo, FILTER_VALIDATE_URL) ? $photo : asset('storage/'.$photo);
+        return \App\Support\Base64Image::url($photo);
     }
 }

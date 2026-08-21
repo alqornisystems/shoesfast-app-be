@@ -61,8 +61,9 @@ class AuthController extends Controller
     }
 
     /**
-     * Data lama menyimpan URL absolut, unggahan baru menyimpan jalur relatif.
-     * Aturannya sama dengan OrderController dan Api\Customer\CatalogController.
+     * Satu pintu untuk semua bentuk yang telanjur ada di kolom ini: URL absolut
+     * milik data lama, jalur relatif unggahan baru, dan URL domain lama yang
+     * sudah mati — yang terakhir diganti di dalam Base64Image::url().
      */
     private function photoUrl(?string $photo): ?string
     {
@@ -70,7 +71,7 @@ class AuthController extends Controller
             return null;
         }
 
-        return filter_var($photo, FILTER_VALIDATE_URL) ? $photo : asset('storage/'.$photo);
+        return Base64Image::url($photo);
     }
 
     // POST /api/auth/login

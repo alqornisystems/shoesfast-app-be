@@ -100,16 +100,37 @@ class UkuranFotoTest extends TestCase
         $this->assertLessThan($besarAsli, $besarBaru);
     }
 
-    /** Nilai yang bukan data URL harus lewat tanpa disentuh. */
+    /** Nilai yang bukan data URL harus lewat tanpa disentuh saat DISIMPAN. */
     public function test_jalur_lama_dan_url_absolut_dibiarkan(): void
     {
         $this->assertSame('users/lama.jpg', Base64Image::store('users/lama.jpg', 'users'));
 
-        // URL data lama — domainnya bahkan sudah tidak dipakai lagi. Dibiarkan apa adanya;
-        // tidak ada berkas asli untuk diproses ulang.
+        // Saat menyimpan, URL lama tidak disentuh: tidak ada berkas asli untuk diproses
+        // ulang. Penggantian domainnya terjadi saat DIBACA — lihat test di bawah.
         $this->assertSame(
             'https://app.shoesfastind.com/img/customers/customer-1749096040.png',
             Base64Image::store('https://app.shoesfastind.com/img/customers/customer-1749096040.png', 'users')
+        );
+    }
+
+    /**
+     * Domain lama sudah MATI — tidak resolve sama sekali, bukan 404 — sedangkan berkasnya
+     * terlayani di domain sekarang. Tanpa penggantian ini setiap foto warisan (kurir,
+     * pelanggan, barang) tampil rusak di semua aplikasi sekaligus.
+     */
+    public function test_url_domain_lama_diganti_domain_sekarang(): void
+    {
+        $this->assertSame(
+            'https://app.shoesfast.id/img/couriers/courier-1667444269.png',
+            Base64Image::url('https://app.shoesfastind.com/img/couriers/courier-1667444269.png')
+        );
+    }
+
+    public function test_url_domain_lain_tidak_disentuh(): void
+    {
+        $this->assertSame(
+            'https://cdn.contoh.com/x.png',
+            Base64Image::url('https://cdn.contoh.com/x.png')
         );
     }
 

@@ -89,6 +89,19 @@ class Base64Image
             : $nilai;
     }
 
+    /**
+     * Domain lama yang sudah MATI. Ribuan baris foto warisan menyimpan URL absolut ke
+     * sana — kurir, pelanggan, barang pesanan — dan domainnya kini tidak resolve sama
+     * sekali (`000`, bukan 404). Berkasnya sendiri ada dan terlayani di domain baru.
+     *
+     * Jadi ini bukan kerapian: tanpa penggantian ini SETIAP foto lama tampil rusak.
+     * API mobile lama menambalnya dengan str_replace di tiap pembacaan; di sini
+     * tambalannya tinggal satu tempat karena semua pembaca lewat sini.
+     */
+    private const DOMAIN_LAMA = 'https://app.shoesfastind.com';
+
+    private const DOMAIN_BARU = 'https://app.shoesfast.id';
+
     /** Kebalikannya: jalur apa pun jadi URL yang bisa dipasang di <img>. */
     public static function url(?string $nilai): ?string
     {
@@ -96,7 +109,13 @@ class Base64Image
             return null;
         }
 
-        return filter_var($nilai, FILTER_VALIDATE_URL) ? $nilai : asset('storage/'.$nilai);
+        $url = filter_var($nilai, FILTER_VALIDATE_URL) ? $nilai : asset('storage/'.$nilai);
+
+        // Diganti pada bentuk URL-nya, bukan pada nilai di database. Menulis ulang
+        // kolomnya berarti satu migrasi data yang tidak bisa dibatalkan; menggantinya
+        // saat dibaca berlaku untuk seluruh baris lama sekaligus dan bisa dicabut
+        // begitu datanya benar-benar dibersihkan.
+        return str_replace(self::DOMAIN_LAMA, self::DOMAIN_BARU, $url);
     }
 
     /**

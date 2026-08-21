@@ -574,11 +574,10 @@ class AttendanceController extends Controller
             return null;
         }
 
-        if (filter_var($photo, FILTER_VALIDATE_URL)) {
-            return $photo;
-        }
-
-        return asset('storage/'.(str_contains($photo, '/') ? $photo : 'absences/'.$photo));
+        // Nama berkas telanjang (unggahan sebelum perbaikan) diberi foldernya dulu;
+        // sisanya — jalur relatif dan URL absolut, termasuk URL domain lama yang sudah
+        // mati — diserahkan ke Base64Image::url().
+        return Base64Image::url(str_contains($photo, '/') ? $photo : 'absences/'.$photo);
     }
 
     /**

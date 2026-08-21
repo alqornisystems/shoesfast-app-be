@@ -486,15 +486,9 @@ class SendController extends Controller
             ->get();
 
         $items->transform(function ($item) {
-            // Convert photo path to full URL
-            $photoUrl = null;
-            if ($item->photo) {
-                if (filter_var($item->photo, FILTER_VALIDATE_URL)) {
-                    $photoUrl = $item->photo;
-                } else {
-                    $photoUrl = asset('storage/'.$item->photo);
-                }
-            }
+            // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati
+            // diganti ke domain sekarang.
+            $photoUrl = \App\Support\Base64Image::url($item->photo);
 
             return [
                 'id' => $item->id,
@@ -533,15 +527,9 @@ class SendController extends Controller
             ->get();
 
         $items->transform(function ($item) {
-            // Convert photo path to full URL
-            $photoUrl = null;
-            if ($item->photo) {
-                if (filter_var($item->photo, FILTER_VALIDATE_URL)) {
-                    $photoUrl = $item->photo;
-                } else {
-                    $photoUrl = asset('storage/'.$item->photo);
-                }
-            }
+            // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati
+            // diganti ke domain sekarang.
+            $photoUrl = \App\Support\Base64Image::url($item->photo);
 
             return [
                 'id' => $item->id,
@@ -972,9 +960,7 @@ class SendController extends Controller
             'customer_name' => $send->order->customer->name ?? null,
             'customer_address' => $send->order->customer->address ?? null,
             'item_name' => $item->name ?? null,
-            'item_photo' => $item && $item->photo
-                ? (filter_var($item->photo, FILTER_VALIDATE_URL) ? $item->photo : asset('storage/'.$item->photo))
-                : null,
+            'item_photo' => \App\Support\Base64Image::url($item?->photo),
             'item_note' => $item->note ?? null,
             'kelengkapan' => $kelengkapan,
             'pengerjaan' => $item

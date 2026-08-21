@@ -123,16 +123,9 @@ class OrderController extends Controller
             $deliveryCourierName = $deliverySend && $deliverySend->user ? $deliverySend->user->name : null;
 
             // Convert photo path to full URL
-            $photoUrl = null;
-            if ($item->photo) {
-                // Check if it's already a URL
-                if (filter_var($item->photo, FILTER_VALIDATE_URL)) {
-                    $photoUrl = $item->photo;
-                } else {
-                    // Convert storage path to URL
-                    $photoUrl = asset('storage/'.$item->photo);
-                }
-            }
+            // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati
+            // diganti ke domain sekarang.
+            $photoUrl = \App\Support\Base64Image::url($item->photo);
 
             return [
                 'id' => $item->id,
@@ -490,16 +483,9 @@ class OrderController extends Controller
             });
 
             // Convert photo path to full URL
-            $photoUrl = null;
-            if ($item->photo) {
-                // Check if it's already a URL
-                if (filter_var($item->photo, FILTER_VALIDATE_URL)) {
-                    $photoUrl = $item->photo;
-                } else {
-                    // Convert storage path to URL
-                    $photoUrl = asset('storage/'.$item->photo);
-                }
-            }
+            // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati
+            // diganti ke domain sekarang.
+            $photoUrl = \App\Support\Base64Image::url($item->photo);
 
             $data = [
                 'id' => $item->id,

@@ -59,14 +59,9 @@ class PublicInvoiceController extends Controller
 
         // Same path -> URL rule as OrderController::show (OrderController.php:123-137).
         $items = $order->items->map(function ($item) {
-            $photoUrl = null;
-            if ($item->photo) {
-                if (filter_var($item->photo, FILTER_VALIDATE_URL)) {
-                    $photoUrl = $item->photo;
-                } else {
-                    $photoUrl = asset('storage/'.$item->photo);
-                }
-            }
+            // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati
+            // diganti ke domain sekarang.
+            $photoUrl = \App\Support\Base64Image::url($item->photo);
 
             return [
                 'name' => $item->name,
