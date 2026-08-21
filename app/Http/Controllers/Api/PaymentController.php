@@ -134,6 +134,10 @@ class PaymentController extends Controller
     {
         $validated = $request->validate([
             'orders_id' => 'required|exists:orders,id',
+            // Opsional: kasir boleh menunjuk barang mana yang dilunasi pembayaran ini.
+            // Dikosongkan berarti untuk pesanannya secara umum — itu keadaan normal,
+            // bukan data yang kurang lengkap.
+            'orders_items_id' => 'nullable|integer',
             'date' => 'required|date',
             'nominal' => 'required|integer|min:1',
             'note' => 'nullable|string',
@@ -145,6 +149,23 @@ class PaymentController extends Controller
             // Check if order exists and get total price
             $order = Order::findOrFail($validated['orders_id']);
 
+            // Barang yang ditunjuk harus milik pesanan itu. Tanpa pemeriksaan ini satu
+            // salah ketik id memindahkan pelunasan ke pesanan orang lain, dan barang
+            // yang sudah dibayar tetap tertahan sementara barang orang asing terbuka.
+            if (! empty($validated['orders_items_id'])) {
+                $milikPesanan = \App\Models\OrderItem::where('id', $validated['orders_items_id'])
+                    ->where('orders_id', $order->id)
+                    ->exists();
+
+                if (! $milikPesanan) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'message' => 'Barang itu bukan bagian dari pesanan ini.',
+                    ], 422);
+                }
+            }
+
             // Handle photo upload (base64)
             $photoPath = null;
             if (isset($validated['photo']) && $validated['photo']) {
@@ -154,6 +175,7 @@ class PaymentController extends Controller
             // Always create new payment (support multiple payments/cicilan)
             $payment = Payment::create([
                 'orders_id' => $validated['orders_id'],
+                'orders_items_id' => $validated['orders_items_id'] ?? null,
                 'date' => strtotime($validated['date']),
                 'nominal' => $validated['nominal'],
                 'note' => $validated['note'] ?? null,

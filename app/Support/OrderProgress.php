@@ -335,24 +335,63 @@ class OrderProgress
     /**
      * Membagi pembayaran pesanan ke barang-barangnya.
      *
-     * Tabel payments hanya punya orders_id — tidak ada kolom yang menyebut pembayaran
-     * ini untuk barang yang mana. Jadi pembagiannya ditebak, dengan aturan yang paling
-     * mendekati kenyataan kasir: barang yang SUDAH SIAP dilunasi lebih dulu, karena
-     * uang memang berpindah saat barang diserahkan.
+     * Dua lapis, dan urutannya penting:
      *
-     * ponytail: tebakan. Kalau suatu saat kasir perlu menunjuk barang secara pasti,
-     * yang dibutuhkan kolom orders_items_id di payments — bukan aturan yang lebih
-     * pintar di sini.
+     * 1. Pembayaran yang MENUNJUK barang (payments.orders_items_id terisi) masuk ke
+     *    barang itu, titik. Ini fakta, bukan tebakan — kasir yang mencatatnya tahu
+     *    persis barang mana yang diserahkan.
+     * 2. Sisanya — pembayaran lama dan pelunasan yang memang untuk seluruh pesanan —
+     *    dibagi ke barang yang belum tertutup, yang SUDAH SIAP lebih dulu, karena
+     *    uang memang berpindah saat barang diserahkan.
+     *
+     * Lapis kedua tetap tebakan, dan tetap bisa salah menahan barang yang sebenarnya
+     * sudah dibayar. Bedanya sekarang ada jalan keluarnya: begitu kasir mengisi
+     * orders_items_id, barang itu keluar dari tebakan sepenuhnya.
+     *
+     * Kelebihan bayar pada satu barang tidak menguap — sisanya turun ke barang lain.
+     * Pelanggan yang membayar Rp 300.000 untuk barang berharga Rp 275.000 sudah
+     * menyerahkan Rp 25.000 yang tetap miliknya.
      *
      * @return array<int, int>
      */
     private function alokasikanPembayaran(): array
     {
-        $kas = (int) Payment::withoutGlobalScope('branch')
+        $pembayaran = Payment::withoutGlobalScope('branch')
             ->where('orders_id', $this->order->id)
-            ->sum('nominal');
+            ->get();
 
         $hasil = [];
+        foreach ($this->items as $item) {
+            $hasil[$item->id] = 0;
+        }
+
+        $kas = 0;
+
+        foreach ($pembayaran as $bayar) {
+            $tujuan = (int) $bayar->orders_items_id;
+            $nominal = (int) $bayar->nominal;
+
+            // Menunjuk barang yang tidak ada di pesanan ini (data lama yang aneh)
+            // diperlakukan seperti tidak menunjuk apa pun, bukan dibuang.
+            if ($tujuan && array_key_exists($tujuan, $hasil)) {
+                $hasil[$tujuan] += $nominal;
+
+                continue;
+            }
+
+            $kas += $nominal;
+        }
+
+        // Kelebihan pada barang bertarget dikembalikan ke kas bersama.
+        foreach ($this->items as $item) {
+            $harga = max(0, (int) $item->price);
+            $lebih = $hasil[$item->id] - $harga;
+
+            if ($harga > 0 && $lebih > 0) {
+                $hasil[$item->id] = $harga;
+                $kas += $lebih;
+            }
+        }
 
         $urutan = $this->items
             ->sortBy(fn (OrderItem $item) => [
@@ -362,10 +401,18 @@ class OrderProgress
             ->values();
 
         foreach ($urutan as $item) {
-            $harga = (int) $item->price;
-            $ambil = min($kas, max(0, $harga));
+            if ($kas <= 0) {
+                break;
+            }
 
-            $hasil[$item->id] = $ambil;
+            $kurang = max(0, (int) $item->price) - $hasil[$item->id];
+
+            if ($kurang <= 0) {
+                continue;
+            }
+
+            $ambil = min($kas, $kurang);
+            $hasil[$item->id] += $ambil;
             $kas -= $ambil;
         }
 

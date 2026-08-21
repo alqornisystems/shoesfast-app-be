@@ -186,6 +186,8 @@ trait CreatesCustomerSchema
             $t->increments('id');
             $t->integer('projects_id')->default(1);
             $t->integer('orders_id')->nullable();
+            // Pembayaran boleh menunjuk barang. null = untuk pesanannya secara umum.
+            $t->integer('orders_items_id')->nullable();
             $t->integer('date')->nullable();
             $t->integer('nominal')->default(0);
             $t->text('note')->nullable();

@@ -176,6 +176,28 @@ Urutan menaikkannya nanti: isi `app_store_url` dan `app_latest_version` dulu, na
 `app_min_version` **terakhir** — setelah build barunya benar-benar ada di store. Menaikkan
 lebih dulu langsung mengunci semua orang yang belum sempat memperbarui.
 
+## 8. Pembayaran bisa menunjuk barang
+
+Setara migrasi `2026_08_22_000001_add_orders_items_id_to_payments_table`. Dibutuhkan
+aturan "barang boleh diambil satu per satu setelah tagihannya sendiri lunas".
+
+```sql
+ALTER TABLE `payments`
+  ADD COLUMN IF NOT EXISTS `orders_items_id` INT(11) NULL AFTER `orders_id`;
+
+ALTER TABLE `payments`
+  ADD INDEX IF NOT EXISTS `payments_orders_items_id_index` (`orders_items_id`);
+```
+
+Kolomnya **nullable dan memang akan tetap null untuk sebagian besar baris**. Pembayaran
+lama tidak punya jawabannya, dan pembayaran yang melunasi seluruh pesanan sekaligus
+memang tidak menunjuk barang mana pun. Keduanya tetap dibagi rata seperti sebelumnya —
+tidak ada data lama yang perlu disentuh, dan tidak ada yang rusak kalau kolomnya
+dibiarkan kosong selamanya.
+
+Yang berubah hanya ini: begitu kasir mengisi kolomnya, tebakan berhenti dan angkanya
+jadi fakta.
+
 ---
 
 ## Setelah dijalankan
@@ -186,6 +208,7 @@ Periksa hasilnya:
 SHOW COLUMNS FROM `sends` LIKE 'proof_%';
 SHOW COLUMNS FROM `treatments` LIKE 'started_at';
 SHOW COLUMNS FROM `sends` LIKE 'tracking_%';
+SHOW COLUMNS FROM `payments` LIKE 'orders_items_id';
 SHOW TABLES LIKE 'device_tokens';
 SELECT `key`, `value` FROM `settings` WHERE `key` LIKE 'app_%';
 ```
@@ -200,9 +223,10 @@ INSERT IGNORE INTO `migrations` (`migration`, `batch`) VALUES
   ('2026_08_13_000001_add_field_task_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b)),
   ('2026_08_13_000002_create_device_tokens_table',         (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_13_000003_add_started_at_to_treatments_table',  (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
-  ('2026_08_21_000001_add_tracking_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b));
+  ('2026_08_21_000001_add_tracking_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
+  ('2026_08_22_000001_add_orders_items_id_to_payments_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b));
 ```
 
-Sebenarnya keenam migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
+Sebenarnya ketujuh migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
 menjalankan `php artisan migrate` setelah SQL ini pun tidak akan merusak apa pun — ia hanya
 akan melewati yang sudah ada.

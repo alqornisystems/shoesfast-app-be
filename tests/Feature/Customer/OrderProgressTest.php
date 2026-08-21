@@ -112,6 +112,57 @@ class OrderProgressTest extends TestCase
         $this->assertSame(250000, $items['Sepatu B']['progress']['credit']);
     }
 
+    /**
+     * Pembayaran yang MENUNJUK barang adalah fakta, bukan tebakan.
+     *
+     * Tanpa kolom itu, pelanggan yang melunasi tasnya akan melihat uangnya tercatat di
+     * sepatu yang kebetulan sudah siap — dan tasnya tetap tertahan meski sudah dibayar.
+     */
+    public function test_pembayaran_yang_menunjuk_barang_tidak_ditebak_lagi(): void
+    {
+        $c = $this->pelanggan();
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $order = $this->pesanan($c);
+
+        $this->barang($order, 'Sepatu siap', 100000, 2);
+        $antre = $this->barang($order, 'Tas antre', 100000, 1);
+
+        // Uangnya untuk tas, bukan sepatu — meski sepatunya yang sudah siap.
+        Payment::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id,
+            'orders_items_id' => $antre->id,
+            'date' => time(), 'nominal' => 100000,
+        ]);
+
+        $items = collect($this->detail($order)['items'])->keyBy('name');
+
+        $this->assertSame(0, $items['Tas antre']['progress']['credit']);
+        $this->assertSame(100000, $items['Sepatu siap']['progress']['credit']);
+        $this->assertFalse($items['Sepatu siap']['progress']['can_take']);
+    }
+
+    /** Kelebihan bayar pada satu barang tidak menguap — sisanya turun ke barang lain. */
+    public function test_kelebihan_bayar_barang_bertarget_turun_ke_barang_lain(): void
+    {
+        $c = $this->pelanggan();
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $order = $this->pesanan($c);
+
+        $a = $this->barang($order, 'Sepatu A', 100000, 2);
+        $this->barang($order, 'Sepatu B', 50000, 2);
+
+        Payment::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id,
+            'orders_items_id' => $a->id,
+            'date' => time(), 'nominal' => 150000,
+        ]);
+
+        $items = collect($this->detail($order)['items'])->keyBy('name');
+
+        $this->assertSame(0, $items['Sepatu A']['progress']['credit']);
+        $this->assertSame(0, $items['Sepatu B']['progress']['credit']);
+    }
+
     /** Barang yang belum selesai tidak boleh diambil meski uangnya sudah cukup. */
     public function test_barang_yang_belum_selesai_tidak_bisa_diambil(): void
     {

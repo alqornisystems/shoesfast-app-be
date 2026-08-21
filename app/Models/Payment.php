@@ -16,6 +16,9 @@ class Payment extends Model
     protected $fillable = [
         'projects_id',
         'orders_id',
+        // Barang yang dilunasi pembayaran ini. null = untuk pesanannya secara umum,
+        // dan itu keadaan normal, bukan data yang kurang lengkap.
+        'orders_items_id',
         'date',
         'nominal',
         'note',
@@ -27,6 +30,7 @@ class Payment extends Model
 
     protected $casts = [
         'date' => 'integer',
+        'orders_items_id' => 'integer',
         'nominal' => 'integer',
         'is_deleted' => 'integer',
         'created_at' => 'integer',
