@@ -140,6 +140,57 @@ class OrderEditingTest extends TestCase
         $this->assertSame('Nama lama', $item->fresh()->name);
     }
 
+    public function test_foto_bisa_diganti_selama_barang_belum_selesai(): void
+    {
+        if (! extension_loaded('gd')) {
+            $this->markTestSkipped('Ekstensi GD tidak tersedia.');
+        }
+
+        \Illuminate\Support\Facades\Storage::fake('public');
+
+        $item = $this->barang('Sepatu', status: 1);
+        $item->update(['photo' => 'orders_items/lama.jpg']);
+
+        $img = imagecreatetruecolor(600, 400);
+        ob_start();
+        imagejpeg($img, null, 85);
+        $dataUrl = 'data:image/jpeg;base64,'.base64_encode((string) ob_get_clean());
+        imagedestroy($img);
+
+        $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
+            'photo' => $dataUrl,
+        ])->assertOk();
+
+        $baru = $item->fresh()->photo;
+
+        $this->assertNotSame('orders_items/lama.jpg', $baru);
+        $this->assertStringStartsWith('orders_items/', $baru);
+    }
+
+    public function test_foto_bisa_dihapus(): void
+    {
+        $item = $this->barang('Sepatu', status: 1);
+        $item->update(['photo' => 'orders_items/lama.jpg']);
+
+        $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
+            'photo' => null,
+        ])->assertOk();
+
+        $this->assertNull($item->fresh()->photo);
+    }
+
+    public function test_foto_terkunci_setelah_barang_selesai(): void
+    {
+        $item = $this->barang('Sepatu', status: 2);
+        $item->update(['photo' => 'orders_items/lama.jpg']);
+
+        $this->patchJson("/api/customer/orders/{$this->order->id}/items/{$item->id}", [
+            'photo' => null,
+        ])->assertStatus(422);
+
+        $this->assertSame('orders_items/lama.jpg', $item->fresh()->photo);
+    }
+
     /** Inti permintaannya: menambah pekerjaan saat barangnya sedang dikerjakan. */
     public function test_layanan_bisa_ditambahkan_di_tengah_pengerjaan(): void
     {

@@ -270,6 +270,72 @@ class OrderProgressTest extends TestCase
         $this->assertNull($d['items'][0]['progress']['tracking']);
     }
 
+    /**
+     * Barang yang BARU ditambahkan tidak boleh meminjam penjemputan barang lama.
+     *
+     * Persis yang terjadi: pesanan lama sudah punya baris jemput selesai, lalu satu
+     * barang ditambahkan. Karena penjemputan dibaca per PESANAN, barang yang masih di
+     * rumah pelanggan dilaporkan "sudah sampai di bengkel, menunggu antrean".
+     */
+    public function test_barang_baru_tidak_meminjam_penjemputan_barang_lama(): void
+    {
+        $c = $this->pelanggan();
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $order = $this->pesanan($c);
+
+        $lama = $this->barang($order, 'Sepatu lama', 100000, 1);
+        $baru = $this->barang($order, 'Sepatu baru', 0, 0);
+
+        // Penjemputan seluruh pesanan yang SUDAH selesai.
+        Send::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => null,
+            'users_id' => 3, 'date' => time() - 3 * 86400, 'type' => 0, 'status' => 1,
+        ]);
+
+        // Penjemputan khusus barang baru, masih dijadwalkan.
+        Send::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => $baru->id,
+            'users_id' => 0, 'date' => time() + 86400, 'type' => 0, 'status' => 0,
+        ]);
+
+        $items = collect($this->detail($order)['items'])->keyBy('name');
+
+        $this->assertStringContainsString(
+            'Menunggu dijemput kurir',
+            $items['Sepatu baru']['progress']['location']
+        );
+        $this->assertStringNotContainsString(
+            'Sudah sampai',
+            $items['Sepatu baru']['progress']['location']
+        );
+
+        // Yang lama tetap benar: penjemputannya memang sudah selesai.
+        $this->assertSame('Sepatu lama', $items['Sepatu lama']['name']);
+        $this->assertStringContainsString(
+            'Sedang dikerjakan',
+            $items['Sepatu lama']['progress']['location']
+        );
+
+        // Langkah jemputnya ditulis sebagai rencana, bukan fakta yang belum dicentang.
+        $langkah = collect($items['Sepatu baru']['progress']['history'])->firstWhere('key', 'dijemput');
+        $this->assertFalse($langkah['done']);
+        $this->assertSame('Dijadwalkan dijemput kurir', $langkah['label']);
+    }
+
+    /** Tanpa baris penjemputan sama sekali, jangan menjanjikan kurir yang tidak akan datang. */
+    public function test_tanpa_penjemputan_tidak_menyebut_kurir(): void
+    {
+        $c = $this->pelanggan();
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $order = $this->pesanan($c);
+        $this->barang($order, 'Diantar sendiri', 0, 0);
+
+        $this->assertSame(
+            'Menunggu barang sampai di Bengkel Shoesfast Pusat',
+            $this->detail($order)['items'][0]['progress']['location']
+        );
+    }
+
     /** Kurir tidak berangkat hari Minggu. Menerimanya diam-diam berarti menjanjikan penjemputan yang tidak terjadi. */
     public function test_tanggal_jemput_hari_minggu_ditolak(): void
     {

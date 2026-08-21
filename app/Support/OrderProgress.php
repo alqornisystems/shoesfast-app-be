@@ -229,10 +229,32 @@ class OrderProgress
             self::DIANTAR => 'Sedang diantar kurir ke alamatmu',
             self::SIAP => "Selesai, menunggu diambil di {$diBengkel}",
             self::DIKERJAKAN => "Sedang dikerjakan di {$diBengkel}",
-            default => $this->penjemputan()
-                ? "Sudah sampai di {$diBengkel}, menunggu antrean"
-                : 'Menunggu dijemput kurir',
+            default => $this->lokasiSebelumDikerjakan($item, $diBengkel),
         };
+    }
+
+    /**
+     * Barang yang belum mulai dikerjakan bisa berada di tiga tempat yang sangat
+     * berbeda, dan menyamakannya adalah kebohongan kecil yang langsung ketahuan:
+     * pelanggan yang barangnya masih di rumah dibilang "sudah sampai di bengkel".
+     */
+    private function lokasiSebelumDikerjakan(OrderItem $item, string $diBengkel): string
+    {
+        if ($this->sudahSampai($item)) {
+            return "Sudah sampai di {$diBengkel}, menunggu antrean";
+        }
+
+        $jemput = $this->penjemputan($item);
+
+        if ($jemput) {
+            return 'Menunggu dijemput kurir'
+                .($jemput->date ? ' pada '.date('j F', (int) $jemput->date) : '');
+        }
+
+        // Tidak ada baris penjemputan sama sekali: barangnya diantar sendiri, atau
+        // penjemputannya belum dibuatkan. Kalimatnya harus benar untuk keduanya —
+        // menyebut kurir di sini menjanjikan orang yang tidak akan datang.
+        return "Menunggu barang sampai di {$diBengkel}";
     }
 
     /**
@@ -253,15 +275,19 @@ class OrderProgress
             'done' => true,
         ]];
 
-        $jemput = $this->penjemputan();
+        $jemput = $this->penjemputan($item);
 
         if ($jemput) {
+            $selesaiJemput = (int) $jemput->status === 1;
+
             $riwayat[] = [
                 'key' => 'dijemput',
-                'label' => 'Dijemput kurir',
+                // Langkah yang belum terjadi ditulis sebagai rencana, bukan sebagai
+                // fakta yang kebetulan belum dicentang.
+                'label' => $selesaiJemput ? 'Dijemput kurir' : 'Dijadwalkan dijemput kurir',
                 'detail' => $jemput->user?->name ? 'Oleh '.$jemput->user->name : null,
                 'date' => (int) $jemput->date,
-                'done' => true,
+                'done' => $selesaiJemput,
             ];
         }
 
@@ -342,11 +368,30 @@ class OrderProgress
         ];
     }
 
-    private function penjemputan(): ?Send
+    /**
+     * Penjemputan yang berlaku untuk barang INI.
+     *
+     * Per barang dulu, baru per pesanan. Dulu fungsi ini hanya melihat pesanan, jadi
+     * barang yang BARU ditambahkan meminjam penjemputan barang lama yang sudah selesai
+     * dan langsung dilaporkan "sudah sampai di bengkel" — padahal kurirnya belum
+     * berangkat menjemputnya.
+     *
+     * Statusnya sengaja tidak disaring di sini: pemanggilnya perlu membedakan
+     * penjemputan yang sudah selesai dari yang masih dijadwalkan.
+     */
+    private function penjemputan(OrderItem $item): ?Send
     {
-        return $this->sends->first(
-            fn (Send $s) => (int) $s->type === 0 && (int) $s->status === 1
-        );
+        return $this->sends->first(fn (Send $s) => (int) $s->type === 0
+                && (int) $s->orders_items_id === $item->id)
+            ?? $this->sends->first(fn (Send $s) => (int) $s->type === 0
+                && $s->orders_items_id === null);
+    }
+
+    private function sudahSampai(OrderItem $item): bool
+    {
+        $jemput = $this->penjemputan($item);
+
+        return $jemput !== null && (int) $jemput->status === 1;
     }
 
     /** Pengiriman pulang untuk barang ini — per barang dulu, baru per pesanan. */

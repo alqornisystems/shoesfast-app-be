@@ -123,6 +123,10 @@ class OrderItemController extends Controller
 
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:100'],
+            // Foto ikut boleh diganti selama barangnya belum selesai. Sama seperti
+            // nama, ia label — dan foto yang salah justru lebih membingungkan petugas
+            // daripada tidak ada foto sama sekali.
+            'photo' => ['sometimes', 'nullable', 'string', 'max:1300000'],
             'note' => ['sometimes', 'nullable', 'string'],
             'checkbox' => ['sometimes', 'nullable', 'array'],
             'checkbox.*' => ['boolean'],
@@ -134,9 +138,11 @@ class OrderItemController extends Controller
             'add_services.*' => ['integer', 'exists:services,id'],
         ]);
 
-        if (array_key_exists('name', $validated) && ! $izin['can_rename']) {
+        $ubahLabel = array_key_exists('name', $validated) || array_key_exists('photo', $validated);
+
+        if ($ubahLabel && ! $izin['can_rename']) {
             return response()->json([
-                'message' => 'Barang ini sudah selesai dikerjakan, namanya tidak bisa diubah lagi.',
+                'message' => 'Barang ini sudah selesai dikerjakan, datanya tidak bisa diubah lagi.',
             ], 422);
         }
 
@@ -153,6 +159,15 @@ class OrderItemController extends Controller
                 if (array_key_exists($kolom, $validated)) {
                     $isian[$kolom] = $validated[$kolom];
                 }
+            }
+
+            if (array_key_exists('photo', $validated)) {
+                // null berarti pelanggan menghapus fotonya — itu perintah yang sah,
+                // bukan bidang yang kebetulan kosong. Berkas lamanya sengaja tidak
+                // dihapus dari disk: baris lain bisa menunjuk jalur yang sama karena
+                // barang yang dipakai ulang berbagi satu foto.
+                $isian['photo'] = $this->simpanFoto($validated['photo'], $order->id)
+                    ?: ($validated['photo'] === null ? null : $item->photo);
             }
 
             if (array_key_exists('checkbox', $validated)) {
