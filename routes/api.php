@@ -75,7 +75,16 @@ Route::get('public/invoice/{token}', [PublicInvoiceController::class, 'show'])
 | Guard `customer` terpisah penuh dari guard staf. Token staf tidak berlaku
 | di sini dan sebaliknya — pemisahnya ada di config/auth.php, bukan di sini.
 */
-Route::prefix('customer/auth')->group(function () {
+/*
+| Captcha dipasang di SELURUH jalur ini, bukan hanya pendaftaran. `check-phone`
+| justru yang paling menggoda bagi bot: ia menjawab nomor mana yang terdaftar,
+| jadi tanpa penjaga ia menjadi alat menyapu basis pelanggan satu per satu.
+|
+| Kalau CAPTCHA_SECRET kosong, middleware-nya melewatkan semuanya — portal sudah
+| hidup, dan rilis yang mengunci seluruh pelanggan sebelum kuncinya disetel jauh
+| lebih merugikan daripada bot yang lolos.
+*/
+Route::prefix('customer/auth')->middleware('captcha')->group(function () {
     Route::post('check-phone', [CustomerAuthController::class, 'checkPhone'])->middleware('throttle:20,1');
     Route::post('login', [CustomerAuthController::class, 'login'])->middleware('throttle:10,1');
     // Pembuatan PIN dibatasi ketat: tanpa verifikasi kanal, ini satu-satunya

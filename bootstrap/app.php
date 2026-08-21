@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
+            'captcha' => \App\Http\Middleware\VerifyCaptcha::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

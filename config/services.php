@@ -52,4 +52,18 @@ return [
         'server_key' => env('FCM_SERVER_KEY', ''),
     ],
 
+    /*
+    | Captcha untuk jalur masuk portal pelanggan. Kosong = mati (fail open), supaya
+    | rilis tidak pernah mengunci pelanggan sebelum kuncinya disetel.
+    |
+    | Bawaannya Cloudflare Turnstile: gratis, tanpa akun Google, dan jawabannya
+    | lolos/tidak — bukan skor yang harus ditera sendiri seperti reCAPTCHA v3.
+    | Untuk memakai reCAPTCHA v3, ganti verify_url ke
+    | https://www.google.com/recaptcha/api/siteverify dan isi CAPTCHA_MIN_SCORE.
+    */
+    'captcha' => [
+        'secret' => env('CAPTCHA_SECRET', ''),
+        'verify_url' => env('CAPTCHA_VERIFY_URL', 'https://challenges.cloudflare.com/turnstile/v0/siteverify'),
+        'min_score' => env('CAPTCHA_MIN_SCORE', 0),
+    ],
 ];
