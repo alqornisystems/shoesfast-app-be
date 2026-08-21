@@ -162,7 +162,13 @@ class DailyStatusTest extends TestCase
     {
         $this->actingAsKurir();
 
+        // Hari kerja, bukan sekadar "besok": kalau besok jatuh Minggu, statusnya
+        // 'weekend' — benar, tapi bukan yang diuji di sini. Test yang bergantung pada
+        // hari apa ia dijalankan akan merah sendiri suatu Sabtu tanpa ada yang berubah.
         $besok = date('Y-m-d', strtotime('+1 day'));
+        while (date('N', strtotime($besok)) === '7') {
+            $besok = date('Y-m-d', strtotime($besok.' +1 day'));
+        }
         $data = $this->getJson("/api/attendances/daily-status?start_date={$besok}&end_date={$besok}")
             ->assertStatus(200)->json('data');
 

@@ -40,6 +40,18 @@ class OrderController extends Controller
      * isolasi data pelanggan pada perilaku yang dirancang untuk staf adalah
      * ketergantungan yang tidak dijanjikan siapa pun.
      */
+    /**
+     * Pesanan milik pelanggan ini: pemilik DAN cabang.
+     *
+     * Pemeriksaan cabang sempat dilepas karena dikira menyembunyikan riwayat pelanggan
+     * yang pernah memesan di cabang lain. Dugaan itu diuji ke data nyata dan SALAH —
+     * nol pesanan yang cabangnya berbeda dari cabang pelanggannya. Jadi melepasnya tidak
+     * memperbaiki apa pun dan hanya melonggarkan penjaga yang dipasang dengan sengaja.
+     *
+     * Yang perlu diketahui kalau suatu hari benar terjadi: memindahkan pelanggan antar
+     * cabang lewat panel admin akan membuat seluruh riwayat pesanannya lenyap dari portal
+     * tanpa jejak. Kalau itu muncul, di sinilah tempat memperbaikinya.
+     */
     private function scopedOrders(Customer $customer)
     {
         return Order::withoutGlobalScope('branch')
@@ -96,14 +108,57 @@ class OrderController extends Controller
             'date' => $order->date,
             'status' => (int) $order->status,
             'status_label' => self::STATUS_LABELS[(int) $order->status] ?? 'Tidak diketahui',
-            'total_price' => (int) $order->total_price,
+            // Sama seperti invoice(): harga yang belum ditentukan dikirim null, bukan 0.
+            // Nol membuat sisa tagihan ikut nol, dan layar membacanya sebagai lunas.
+            'total_price' => $order->total_price === null || (int) $order->total_price === 0
+                ? null
+                : (int) $order->total_price,
             'total_paid' => $totalPaid,
-            'credit' => (int) $order->total_price - $totalPaid,
+            'credit' => $order->total_price === null || (int) $order->total_price === 0
+                ? null
+                : (int) $order->total_price - $totalPaid,
             'pickup_address' => $order->pickup_address,
             'pickup_maps' => $order->pickup_maps,
             'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item))->values(),
             'timeline' => $this->timeline($order, $items),
+            'tracking' => $this->pelacakan($order),
         ]);
+    }
+
+    /**
+     * Tautan lacak kurir untuk pesanan ini, kalau memang ada tugas yang sedang jalan.
+     *
+     * Tokennya sudah diterbitkan saat kurir menekan "berangkat"; yang kurang selama ini
+     * cuma jalan pelanggan menemukannya. Tautan itu dikirim lewat WhatsApp oleh kurir —
+     * dan pesan WhatsApp tenggelam. Halaman pesanannya sendiri tempat paling wajar
+     * mencarinya.
+     *
+     * null kalau tidak ada tugas berjalan, tokennya sudah dicabut, atau masa berlakunya
+     * lewat. Tidak apa-apa mengembalikan token ke pelanggan ini: pesanannya memang
+     * miliknya, dan kepemilikan itu sudah dipastikan di atas.
+     */
+    private function pelacakan(Order $order): ?array
+    {
+        $send = Send::withoutGlobalScopes()
+            ->where('orders_id', $order->id)
+            ->where('is_deleted', 0)
+            ->where('status', Send::STATUS_BERJALAN)
+            ->whereNotNull('tracking_token')
+            ->where('tracking_expires_at', '>', time())
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $send) {
+            return null;
+        }
+
+        return [
+            'token' => $send->tracking_token,
+            // 0 = jemput, 1 = antar. Kalimat di layar berbeda: yang satu kurir datang
+            // mengambil, yang satu mengantar pulang.
+            'type' => (int) $send->type,
+            'expires_at' => (int) $send->tracking_expires_at,
+        ];
     }
 
     // POST /api/customer/orders
@@ -240,7 +295,13 @@ class OrderController extends Controller
             ->get();
 
         $totalPaid = (int) $payments->sum('nominal');
-        $credit = (int) $order->total_price - $totalPaid;
+
+        // Harga BOLEH belum ada: pesanan portal lahir tanpa harga dan petugas
+        // menentukannya setelah barang diperiksa. Memaksa null jadi 0 membuat
+        // credit ikut 0, dan pesanan yang belum ditagih dilaporkan LUNAS.
+        $belumBerharga = $order->total_price === null || (int) $order->total_price === 0;
+        $totalPrice = $belumBerharga ? null : (int) $order->total_price;
+        $credit = $belumBerharga ? null : $totalPrice - $totalPaid;
 
         // Disalin dari PaymentController::index dan PublicInvoiceController
         // supaya ketiganya tidak pernah berbeda angka untuk pesanan yang sama.
@@ -250,8 +311,10 @@ class OrderController extends Controller
             'code' => $order->code,
             'date' => $order->date,
             'due_date' => $dueDate,
-            'payment_status' => $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid'),
-            'total_price' => (int) $order->total_price,
+            'payment_status' => $belumBerharga
+                ? 'unpriced'
+                : ($credit <= 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid')),
+            'total_price' => $totalPrice,
             'total_paid' => $totalPaid,
             'credit' => $credit,
             'payments' => $payments->map(fn (Payment $payment) => [
