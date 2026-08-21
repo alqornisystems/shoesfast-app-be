@@ -23,6 +23,12 @@ class TreatmentController extends Controller
      */
     public function index(Request $request)
     {
+        $request->validate([
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'users_id' => ['nullable', 'integer'],
+        ]);
+
         $query = Treatment::with([
             'service',
             'orderItem.order.customer',
@@ -75,21 +81,25 @@ class TreatmentController extends Controller
                                 });
                         });
                 })
-                ->orderBy('created_at', 'ASC'); // Oldest first
+                ->orderBy('created_at', 'ASC')
+                ->orderBy('id', 'ASC'); // Oldest first; id sebagai pemecah seri
         } elseif ($page === 'pengerjaan') {
             // In progress: assigned to user, not completed
             $query->whereNotNull('users_id')
                 ->where('status', '!=', 2)
-                ->orderBy('date_end', 'ASC'); // Sort by deadline (earliest first)
+                ->orderBy('date_end', 'ASC')
+                ->orderBy('id', 'ASC'); // Deadline terdekat dulu; id sebagai pemecah seri
         } elseif ($page === 'pengerjaan-vendor') {
             // Vendor work: assigned to partnership, not completed
             $query->whereNotNull('partnerships_id')
                 ->where('status', '!=', 2)
-                ->orderBy('date_start', 'DESC');
+                ->orderBy('date_start', 'DESC')
+                ->orderBy('id', 'DESC');
         } elseif ($page === 'history') {
             // History: completed or cancelled
             $query->where('status', '>=', 2)
-                ->orderBy('done_at', 'DESC');
+                ->orderBy('done_at', 'DESC')
+                ->orderBy('id', 'DESC');
         }
 
         // Search
@@ -113,6 +123,14 @@ class TreatmentController extends Controller
             $query->where('status', $request->status);
         }
 
+        // Saringan per teknisi, untuk admin yang menekan angka "5 barang di Renno" dan
+        // ingin melihat kelimanya. Untuk Teknisi/Kurir parameter ini DIABAIKAN: mereka
+        // sudah otomatis disaring ke dirinya sendiri di atas, dan menghormatinya di sini
+        // berarti pekerjaan orang lain bisa dibaca hanya dengan menebak sebuah id.
+        if ($this->isAdmin($request) && $request->filled('users_id')) {
+            $query->where('users_id', $request->input('users_id'));
+        }
+
         $perPage = $request->input('per_page', 15);
         $treatments = $query->paginate($perPage);
 
@@ -130,6 +148,18 @@ class TreatmentController extends Controller
                 'id' => $treatment->id,
                 'orders_id' => $treatment->orderItem->order->id ?? null,
                 'orders_code' => $treatment->orderItem->order->code ?? null,
+                // Tiga cap waktu yang artinya BERBEDA, dan selama ini cuma `created_at`
+                // milik baris treatment yang terkirim — itu kapan pekerjaannya dicatat,
+                // bukan kapan barangnya masuk. Untuk barang yang masuk Senin dan baru
+                // dibuatkan treatment Rabu, keduanya berselisih dua hari.
+                //
+                // `orders_date` adalah tanggal pesanan yang dipakai seluruh sistem
+                // (kolom `orders.date`) — inilah "barang masuk" dalam arti bisnis.
+                'orders_date' => $treatment->orderItem->order->date ?? null,
+                'orders_created_at' => $treatment->orderItem->order->created_at ?? null,
+                // Barang bisa menyusul setelah pesanannya dibuat; ini kapan BARIS BARANG
+                // ini muncul.
+                'orders_items_created_at' => $treatment->orderItem->created_at ?? null,
                 'orders_items_id' => $treatment->orders_items_id,
                 'orders_items_name' => $treatment->orderItem->name ?? null,
                 'orders_items_photo' => $treatment->orderItem->photo ?? null,
