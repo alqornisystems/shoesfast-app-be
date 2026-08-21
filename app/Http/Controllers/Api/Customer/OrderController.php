@@ -550,8 +550,15 @@ class OrderController extends Controller
             'photo' => \App\Support\Base64Image::url($item->photo),
             'kelengkapan' => $this->kelengkapan($item),
             'note' => $item->note,
+            // Harga per barang, supaya rincian tagihan bisa menunjukkan ASAL angkanya.
+            // Total tanpa rincian adalah angka yang harus dipercaya begitu saja, dan
+            // pertanyaan pertama tiap orang yang melihat tagihan adalah "ini dari mana".
+            // null selama petugas belum menentukannya — 0 akan terbaca sebagai gratis.
+            'price' => (int) $item->price === 0 ? null : (int) $item->price,
+            'discount' => (int) $item->discount,
             'treatments' => $item->treatments->map(fn ($treatment) => [
                 'name' => $treatment->service?->name,
+                'price' => (int) $treatment->price === 0 ? null : (int) $treatment->price,
                 'status' => (int) $treatment->status,
                 'date_start' => $treatment->date_start,
                 'done_at' => $treatment->done_at,
