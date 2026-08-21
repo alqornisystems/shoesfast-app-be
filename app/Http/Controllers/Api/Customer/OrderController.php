@@ -583,6 +583,14 @@ class OrderController extends Controller
             'claim' => $order ? WarrantyWindow::status($order, $item) : null,
             // Keadaan, posisi, tagihan, dan riwayat barang ini — semuanya per barang.
             'progress' => $progress?->item($item),
+            // id layanan yang masih MENGANTRE. Dipakai layar menyeed pemilih layanan
+            // saat pelanggan mengubah pilihannya — yang sudah dikerjakan tidak ikut
+            // karena memang tidak bisa dibatalkan lagi.
+            'pending_services' => $item->treatments
+                ->filter(fn ($t) => (int) $t->status === 0 && ! $t->done_at)
+                ->pluck('services_id')
+                ->map(fn ($id) => (int) $id)
+                ->values(),
             'treatments' => $item->treatments->map(fn ($treatment) => [
                 'name' => $treatment->service?->name,
                 'price' => (int) $treatment->price === 0 ? null : (int) $treatment->price,
