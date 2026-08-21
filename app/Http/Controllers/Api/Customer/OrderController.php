@@ -12,6 +12,7 @@ use App\Models\Service;
 use App\Models\Treatment;
 use App\Services\PickupZoneService;
 use App\Support\Base64Image;
+use App\Support\WarrantyWindow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -224,7 +225,7 @@ class OrderController extends Controller
                 : (int) $order->total_price - $totalPaid,
             'pickup_address' => $order->pickup_address,
             'pickup_maps' => $order->pickup_maps,
-            'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item))->values(),
+            'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item, $order))->values(),
             'timeline' => $this->timeline($order, $items),
             'tracking' => $this->pelacakan($order),
         ]);
@@ -541,7 +542,7 @@ class OrderController extends Controller
         ]);
     }
 
-    private function presentItem(OrderItem $item): array
+    private function presentItem(OrderItem $item, ?Order $order = null): array
     {
         return [
             'id' => $item->id,
@@ -556,6 +557,10 @@ class OrderController extends Controller
             // null selama petugas belum menentukannya — 0 akan terbaca sebagai gratis.
             'price' => (int) $item->price === 0 ? null : (int) $item->price,
             'discount' => (int) $item->discount,
+            // Kelayakan klaim garansi ikut dikirim supaya portal tidak perlu menebak
+            // aturannya sendiri. Tombol yang muncul lalu ditolak saat ditekan lebih
+            // buruk daripada tombol yang tidak pernah muncul.
+            'claim' => $order ? WarrantyWindow::status($order, $item) : null,
             'treatments' => $item->treatments->map(fn ($treatment) => [
                 'name' => $treatment->service?->name,
                 'price' => (int) $treatment->price === 0 ? null : (int) $treatment->price,

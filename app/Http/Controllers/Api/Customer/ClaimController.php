@@ -6,15 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Guarantee;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\Send;
-use App\Models\Treatment;
+use App\Support\WarrantyWindow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ClaimController extends Controller
 {
-    private const WINDOW_DAYS = 3;
-
     private const STATUS_LABELS = [
         0 => 'Menunggu ditinjau',
         1 => 'Disetujui',
@@ -50,28 +47,20 @@ class ClaimController extends Controller
             return response()->json(['message' => 'Barang tidak ditemukan'], 404);
         }
 
-        $pendingExists = Guarantee::withoutGlobalScope('branch')
-            ->where('orders_items_id', $item->id)
-            ->where('status', 0)
-            ->exists();
+        // Aturannya dibaca dari WarrantyWindow, sumber yang sama dengan yang dipakai
+        // detail pesanan untuk memutuskan tombolnya muncul. Batas ini tetap dipaksakan
+        // di server: menyembunyikan tombol di portal tidak menahan siapa pun yang
+        // menembak endpoint ini langsung.
+        $klaim = WarrantyWindow::status($order, $item);
 
-        if ($pendingExists) {
-            return response()->json(['message' => 'Klaim untuk barang ini masih diproses.'], 422);
-        }
-
-        $referenceDate = $this->referenceDate($order, $item);
-
-        if ($referenceDate === null) {
+        if (! $klaim['eligible']) {
             return response()->json([
-                'message' => 'Barang ini belum punya tanggal terima. Hubungi toko.',
-            ], 422);
-        }
-
-        // Batas dipaksakan di server. Menyembunyikan tombol di portal tidak
-        // menahan siapa pun yang menembak endpoint ini langsung.
-        if (time() > $referenceDate + (self::WINDOW_DAYS * 86400)) {
-            return response()->json([
-                'message' => 'Masa klaim garansi '.self::WINDOW_DAYS.' hari sudah lewat.',
+                'message' => match ($klaim['reason']) {
+                    'sedang_ditinjau' => 'Klaim untuk barang ini masih diproses.',
+                    'belum_selesai' => 'Pesanan ini belum selesai. Klaim dibuka setelah barang kamu terima.',
+                    'belum_diterima' => 'Barang ini belum punya tanggal terima. Hubungi toko.',
+                    default => 'Masa klaim garansi '.WarrantyWindow::DAYS.' hari sudah lewat.',
+                },
             ], 422);
         }
 
@@ -114,43 +103,5 @@ class ClaimController extends Controller
             ]);
 
         return response()->json(['data' => $claims]);
-    }
-
-    /**
-     * Tanggal acuan berjenjang, memakai yang paling akhir tersedia:
-     *   1. pengiriman selesai untuk barang itu    (3.651 barang)
-     *   2. pengiriman selesai di pesanannya       (783 baris tanpa orders_items_id)
-     *   3. done_at terakhir dari treatment barang (8.040 barang)
-     *
-     * Memakai done_at saja berarti menghitung garansi sejak sepatu selesai
-     * dikerjakan, bukan sejak pelanggan menerimanya — sepatu yang menginap
-     * seminggu di toko sudah kehabisan garansi sebelum dipegang pemiliknya.
-     */
-    private function referenceDate(Order $order, OrderItem $item): ?int
-    {
-        $itemDelivery = Send::withoutGlobalScope('branch')
-            ->where('orders_items_id', $item->id)
-            ->where('type', 1)->where('status', 1)
-            ->max('date');
-
-        if ($itemDelivery) {
-            return (int) $itemDelivery;
-        }
-
-        $orderDelivery = Send::withoutGlobalScope('branch')
-            ->where('orders_id', $order->id)
-            ->whereNull('orders_items_id')
-            ->where('type', 1)->where('status', 1)
-            ->max('date');
-
-        if ($orderDelivery) {
-            return (int) $orderDelivery;
-        }
-
-        $doneAt = Treatment::withoutGlobalScope('branch')
-            ->where('orders_items_id', $item->id)
-            ->max('done_at');
-
-        return $doneAt ? (int) $doneAt : null;
     }
 }

@@ -50,7 +50,7 @@ class GuaranteeClaimTest extends TestCase
         return [$order, $item];
     }
 
-    public function test_claim_is_accepted_inside_the_three_day_window(): void
+    public function test_claim_is_accepted_inside_the_window(): void
     {
         $customer = $this->customer();
         [$order, $item] = $this->orderWithItem($customer);
@@ -67,22 +67,38 @@ class GuaranteeClaimTest extends TestCase
         $this->assertSame(1, Guarantee::withoutGlobalScope('branch')->count());
     }
 
-    public function test_claim_after_three_days_is_rejected_by_the_server(): void
+    public function test_claim_after_the_window_is_rejected_by_the_server(): void
     {
         $customer = $this->customer();
         [$order, $item] = $this->orderWithItem($customer);
 
         Send::withoutGlobalScope('branch')->create([
             'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => $item->id,
-            'users_id' => 1, 'date' => time() - (4 * 86400), 'type' => 1, 'status' => 1,
+            'users_id' => 1, 'date' => time() - (8 * 86400), 'type' => 1, 'status' => 1,
         ]);
 
         $this->postJson("/api/customer/orders/{$order->id}/items/{$item->id}/claim", [
             'note' => 'Terlambat',
         ])->assertStatus(422)
-            ->assertJson(['message' => 'Masa klaim garansi 3 hari sudah lewat.']);
+            ->assertJson(['message' => 'Masa klaim garansi 7 hari sudah lewat.']);
 
         $this->assertSame(0, Guarantee::withoutGlobalScope('branch')->count());
+    }
+
+    /** Hari ketujuh masih di dalam, bukan di luar. */
+    public function test_the_seventh_day_still_counts(): void
+    {
+        $customer = $this->customer();
+        [$order, $item] = $this->orderWithItem($customer);
+
+        Send::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => $item->id,
+            'users_id' => 1, 'date' => time() - (7 * 86400) + 60, 'type' => 1, 'status' => 1,
+        ]);
+
+        $this->postJson("/api/customer/orders/{$order->id}/items/{$item->id}/claim", [
+            'note' => 'Masih sempat',
+        ])->assertStatus(201);
     }
 
     public function test_reference_date_falls_back_to_order_level_delivery(): void
@@ -101,11 +117,28 @@ class GuaranteeClaimTest extends TestCase
         ])->assertStatus(201);
     }
 
-    public function test_reference_date_falls_back_to_treatment_done_at(): void
+    /** Diambil sendiri di cabang: tidak ada baris sends, jadi acuannya saat pesanan ditutup. */
+    public function test_reference_date_falls_back_to_when_the_order_was_closed(): void
     {
-        // Barang diambil sendiri di toko: tidak ada baris sends sama sekali.
         $customer = $this->customer();
         [$order, $item] = $this->orderWithItem($customer);
+        $order->forceFill(['modified_at' => time() - 7200])->saveQuietly();
+
+        $this->postJson("/api/customer/orders/{$order->id}/items/{$item->id}/claim", [
+            'note' => 'Jahitan lepas',
+        ])->assertStatus(201);
+    }
+
+    /**
+     * Tanggal selesai DIKERJAKAN tidak pernah dipakai. Sepatu yang menginap seminggu
+     * di rak toko akan kehabisan garansi sebelum pemiliknya memegangnya, dan yang
+     * dijanjikan garansi adalah hasil kerja yang dipakai — bukan yang masih di rak.
+     */
+    public function test_finishing_the_work_does_not_start_the_clock(): void
+    {
+        $customer = $this->customer();
+        [$order, $item] = $this->orderWithItem($customer);
+        $order->forceFill(['status' => 1, 'modified_at' => time()])->saveQuietly();
 
         Treatment::withoutGlobalScope('branch')->create([
             'projects_id' => 1, 'orders_items_id' => $item->id, 'services_id' => 1,
@@ -113,19 +146,49 @@ class GuaranteeClaimTest extends TestCase
         ]);
 
         $this->postJson("/api/customer/orders/{$order->id}/items/{$item->id}/claim", [
-            'note' => 'Jahitan lepas',
-        ])->assertStatus(201);
+            'note' => 'Coba klaim',
+        ])->assertStatus(422)
+            ->assertJson(['message' => 'Pesanan ini belum selesai. Klaim dibuka setelah barang kamu terima.']);
     }
 
-    public function test_item_without_any_reference_date_cannot_be_claimed(): void
+    /** Barang masih di bengkel: belum ada yang bisa diklaim. */
+    public function test_unfinished_order_cannot_be_claimed(): void
+    {
+        $customer = $this->customer();
+        [$order, $item] = $this->orderWithItem($customer);
+        $order->forceFill(['status' => 1])->saveQuietly();
+
+        $this->postJson("/api/customer/orders/{$order->id}/items/{$item->id}/claim", [
+            'note' => 'Coba klaim',
+        ])->assertStatus(422);
+
+        $this->assertSame(0, Guarantee::withoutGlobalScope('branch')->count());
+    }
+
+    /** Portal memutuskan tombolnya dari sini, jadi jawabannya harus sama dengan endpoint klaim. */
+    public function test_order_detail_reports_claim_eligibility_per_item(): void
     {
         $customer = $this->customer();
         [$order, $item] = $this->orderWithItem($customer);
 
-        $this->postJson("/api/customer/orders/{$order->id}/items/{$item->id}/claim", [
-            'note' => 'Coba klaim',
-        ])->assertStatus(422)
-            ->assertJson(['message' => 'Barang ini belum punya tanggal terima. Hubungi toko.']);
+        Send::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'orders_id' => $order->id, 'orders_items_id' => $item->id,
+            'users_id' => 1, 'date' => time() - 86400, 'type' => 1, 'status' => 1,
+        ]);
+
+        $klaim = $this->getJson("/api/customer/orders/{$order->id}")
+            ->assertOk()->json('items.0.claim');
+
+        $this->assertTrue($klaim['eligible']);
+        $this->assertNull($klaim['reason']);
+
+        $order->forceFill(['status' => 1])->saveQuietly();
+
+        $klaim = $this->getJson("/api/customer/orders/{$order->id}")
+            ->assertOk()->json('items.0.claim');
+
+        $this->assertFalse($klaim['eligible']);
+        $this->assertSame('belum_selesai', $klaim['reason']);
     }
 
     public function test_second_claim_while_first_is_pending_is_rejected(): void
