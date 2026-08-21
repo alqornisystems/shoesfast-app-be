@@ -8,6 +8,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Send;
+use App\Models\Service;
+use App\Models\Treatment;
 use App\Services\PickupZoneService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,6 +35,26 @@ class OrderController extends Controller
         'Dust Bag', 'Care Card/Card', 'Tali panjang', 'Tali pendek',
         'Tag Brand', 'Price tag', 'Receipt',
     ];
+
+    /**
+     * Daftar kelengkapan menurut jenis barang — cermin admin panel.
+     *
+     * Jenis "Lainnya" (0) memang TIDAK punya daftar centang di admin: koper, dompet,
+     * jam tangan tidak berbagi satu set kelengkapan, jadi yang dipakai kolom catatan
+     * bebas. Sebelumnya jenis ini diam-diam ikut memakai daftar sepatu, sehingga
+     * pemilik dompet ditanyai soal kaos kaki dan barisnya tersimpan sebagai tiga
+     * boolean yang tidak berarti apa-apa.
+     *
+     * @return list<string>
+     */
+    private static function checklistFor(int $type): array
+    {
+        return match ($type) {
+            1 => self::BAG_CHECKLIST,
+            2 => self::SHOE_CHECKLIST,
+            default => [],
+        };
+    }
 
     /**
      * Cakupan cabang dipaksakan eksplisit, tidak menumpang BranchScoped.
@@ -208,9 +230,11 @@ class OrderController extends Controller
     {
         $customer = $request->user();
 
-        // Tidak ada 'price' dan tidak ada 'services_id' di sini. Harga dan
-        // layanan ditentukan admin saat barang diperiksa; endpoint ini tidak
-        // boleh pernah membaca harga dari badan permintaan.
+        // Pelanggan boleh memilih LAYANAN, tapi tidak pernah HARGA. Tidak ada
+        // 'price' di aturan ini dan tidak ada satu pun harga yang dibaca dari badan
+        // permintaan — semuanya diambil ulang dari tabel services di server. Kalau
+        // tidak, siapa pun yang bisa menyunting satu request bisa memesan bag spa
+        // seharga nol rupiah.
         $validated = $request->validate([
             'items' => ['required', 'array', 'min:1'],
             'items.*.type' => ['required', 'integer', 'in:0,1,2'],
@@ -218,6 +242,8 @@ class OrderController extends Controller
             'items.*.checkbox' => ['nullable', 'array'],
             'items.*.checkbox.*' => ['boolean'],
             'items.*.note' => ['nullable', 'string'],
+            'items.*.services' => ['nullable', 'array', 'max:10'],
+            'items.*.services.*' => ['integer', 'exists:services,id'],
             'pickup.method' => ['required', 'in:jemput,antar_sendiri,ekspedisi'],
             'pickup.date' => ['nullable', 'date'],
         ]);
@@ -234,7 +260,13 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($customer, $validated, $method) {
+        // Pengerjaan paling cepat dimulai saat barangnya sampai. Kalau pelanggan
+        // memilih tanggal jemput, itulah tanggalnya; kalau tidak, hari ini.
+        $mulaiDari = isset($validated['pickup']['date'])
+            ? strtotime($validated['pickup']['date'])
+            : time();
+
+        $order = DB::transaction(function () use ($customer, $validated, $method, $mulaiDari) {
             $order = Order::withoutGlobalScope('branch')->create([
                 'projects_id' => $customer->projects_id,
                 'customers_id' => $customer->id,
@@ -249,17 +281,22 @@ class OrderController extends Controller
             ]);
 
             foreach ($validated['items'] as $itemData) {
-                OrderItem::withoutGlobalScope('branch')->create([
+                $item = OrderItem::withoutGlobalScope('branch')->create([
                     'projects_id' => $customer->projects_id,
                     'orders_id' => $order->id,
                     'name' => $itemData['name'],
                     'type' => $itemData['type'],
+                    // Tetap 0. Harga barang menunggu petugas memeriksanya, dan selama
+                    // total pesanan masih 0 portal menandainya "belum ada tagihan"
+                    // alih-alih menagih angka yang belum tentu jadi angka akhirnya.
                     'price' => 0,
                     'discount' => 0,
                     'status' => 0,
                     'note' => $itemData['note'] ?? null,
                     'checkbox' => $this->serializeCheckbox($itemData),
                 ]);
+
+                $this->createTreatments($item, $itemData['services'] ?? [], $customer->projects_id, $mulaiDari);
             }
 
             if ($method === 'jemput') {
@@ -288,6 +325,51 @@ class OrderController extends Controller
     }
 
     /**
+     * Layanan pilihan pelanggan jadi baris treatment — satu baris per layanan,
+     * persis seperti yang dibuat admin panel lewat form barang pesanan.
+     *
+     * Harganya dibaca dari tabel services, BUKAN dari permintaan. Yang tersimpan
+     * adalah harga saat pesanan dibuat: kalau tarif naik bulan depan, pesanan ini
+     * tidak boleh ikut naik diam-diam.
+     *
+     * Jadwalnya dirantai memakai `estimation` tiap layanan seperti di admin, tapi
+     * mulainya dari tanggal barang direncanakan sampai — bukan dari sekarang.
+     * Menjadwalkan pengerjaan sebelum barangnya ada di bengkel membuat antrean
+     * teknisi terlihat penuh oleh pekerjaan yang belum bisa disentuh.
+     *
+     * @param  list<int>  $serviceIds
+     */
+    private function createTreatments(OrderItem $item, array $serviceIds, ?int $projectId, int $mulaiDari): void
+    {
+        $sebelumnya = null;
+
+        foreach ($serviceIds as $serviceId) {
+            $service = Service::withoutGlobalScope('branch')->find($serviceId);
+
+            if (! $service) {
+                continue;
+            }
+
+            $mulai = $sebelumnya === null ? $mulaiDari : strtotime('+1 day', $sebelumnya);
+            $selesai = strtotime('+'.(int) $service->estimation.' day', $mulai);
+
+            Treatment::withoutGlobalScope('branch')->create([
+                'projects_id' => $projectId,
+                'orders_items_id' => $item->id,
+                'services_id' => $service->id,
+                'price' => (int) $service->price,
+                'date_start' => $mulai,
+                'date_end' => $selesai,
+                // 0 = belum dikerjakan, dan users_id sengaja dibiarkan kosong:
+                // teknisinya ditentukan admin, bukan pelanggan.
+                'status' => 0,
+            ]);
+
+            $sebelumnya = $selesai;
+        }
+    }
+
+    /**
      * Format cermin admin panel: INV + tahun bulan + urutan 4 digit.
      */
     private function generateCode(): string
@@ -306,9 +388,7 @@ class OrderController extends Controller
 
     private function serializeCheckbox(array $itemData): string
     {
-        $size = ((int) $itemData['type'] === 1)
-            ? count(self::BAG_CHECKLIST)
-            : count(self::SHOE_CHECKLIST);
+        $size = count(self::checklistFor((int) $itemData['type']));
 
         $flags = $itemData['checkbox'] ?? [];
 
@@ -392,7 +472,7 @@ class OrderController extends Controller
      */
     private function kelengkapan(OrderItem $item): array
     {
-        $labels = ((int) $item->type === 1) ? self::BAG_CHECKLIST : self::SHOE_CHECKLIST;
+        $labels = self::checklistFor((int) $item->type);
 
         if (! $item->checkbox) {
             return [];

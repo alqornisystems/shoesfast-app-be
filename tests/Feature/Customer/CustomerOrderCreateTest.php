@@ -7,7 +7,9 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Project;
 use App\Models\Send;
+use App\Models\Service;
 use App\Models\Setting;
+use App\Models\Treatment;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -117,6 +119,94 @@ class CustomerOrderCreateTest extends TestCase
         $item = OrderItem::withoutGlobalScope('branch')->where('orders_id', $body['id'])->first();
 
         $this->assertSame('true, false, false, false, false, false, true', $item->checkbox);
+    }
+
+    /**
+     * Jenis "Lainnya" tidak punya daftar kelengkapan di admin panel — koper, dompet,
+     * dan jam tangan tidak berbagi satu set. Sebelumnya jenis ini diam-diam memakai
+     * daftar sepatu, jadi pemilik dompet ditanyai soal kaos kaki dan tiga boolean tak
+     * bermakna ikut tersimpan. Produksi menyimpan string kosong untuk jenis ini.
+     */
+    public function test_other_items_store_empty_checklist(): void
+    {
+        Sanctum::actingAs($this->customer(), ['*'], 'customer');
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 0,
+                'name' => 'Dompet Fossil',
+                'checkbox' => [true, true, true],
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertCreated();
+
+        $this->assertSame('', OrderItem::withoutGlobalScope('branch')->first()->checkbox);
+    }
+
+    public function test_selected_services_become_treatments(): void
+    {
+        $service = Service::create(['name' => 'Deep Clean', 'price' => 50000, 'hpp' => 0, 'estimation' => 5]);
+        Sanctum::actingAs($this->customer(), ['*'], 'customer');
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 2,
+                'name' => 'AF1 putih',
+                'checkbox' => [true, false, false],
+                'services' => [$service->id],
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertCreated();
+
+        $treatment = Treatment::withoutGlobalScope('branch')->first();
+
+        $this->assertNotNull($treatment);
+        $this->assertSame($service->id, (int) $treatment->services_id);
+        $this->assertSame(50000, (int) $treatment->price);
+        $this->assertSame(0, (int) $treatment->status);
+    }
+
+    /**
+     * Pelanggan memilih LAYANAN, tidak pernah HARGA. Harga selalu dibaca ulang dari
+     * tabel services — kalau tidak, siapa pun yang bisa menyunting satu request bisa
+     * memesan bag spa seharga nol rupiah.
+     */
+    public function test_service_price_comes_from_catalog_not_request(): void
+    {
+        $service = Service::create(['name' => 'Bag Spa', 'price' => 275000, 'hpp' => 0, 'estimation' => 5]);
+        Sanctum::actingAs($this->customer(), ['*'], 'customer');
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 1,
+                'name' => 'Tas kulit',
+                'services' => [$service->id],
+                'price' => 0,
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertCreated();
+
+        $this->assertSame(275000, (int) Treatment::withoutGlobalScope('branch')->first()->price);
+
+        // Total pesanan tetap 0: layanan pilihan pelanggan baru sebuah permintaan.
+        // Yang menagih adalah petugas setelah barangnya diperiksa, dan selama total
+        // masih 0 portal menandainya "belum ada tagihan" alih-alih menagih angka
+        // yang belum tentu jadi angka akhirnya.
+        $this->assertSame(0, (int) Order::withoutGlobalScope('branch')->first()->total_price);
+    }
+
+    public function test_unknown_service_is_rejected(): void
+    {
+        Sanctum::actingAs($this->customer(), ['*'], 'customer');
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 2,
+                'name' => 'AF1 putih',
+                'services' => [999999],
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertStatus(422);
     }
 
     public function test_pickup_creates_send_row_and_copies_address(): void
