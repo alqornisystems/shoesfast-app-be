@@ -56,6 +56,62 @@ class CustomerItemsTest extends TestCase
         ]);
     }
 
+    /**
+     * Inti daftar ini: memesan lagi untuk barang yang sama TIDAK boleh menyuruh
+     * pelanggan mengisi ulang apa pun. Jadi kelengkapan dan id barang terakhir ikut
+     * terkirim — yang pertama mengisi centangnya, yang kedua dipakai server menyalin
+     * fotonya tanpa klien perlu mengirim balik URL apa pun.
+     */
+    public function test_membawa_kelengkapan_dan_id_barang_terakhir(): void
+    {
+        $c = $this->pelanggan();
+        $lama = $this->titip($c, 'AF1 putih');
+        $lama->update(['checkbox' => 'true, false, true']);
+
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $data = $this->getJson('/api/customer/items')->assertOk()->json('data');
+
+        $this->assertSame($lama->id, $data[0]['id']);
+        $this->assertSame([true, false, true], $data[0]['kelengkapan']);
+    }
+
+    /**
+     * Pengelompokan harus tahan terhadap riwayat panjang. Dulu hanya 24 baris
+     * TERAKHIR yang dipindai lalu baru dikelompokkan, jadi pelanggan yang rajin
+     * menitipkan kehilangan sepatu lamanya dari daftar meski barangnya masih ada dan
+     * masih rutin dicuci.
+     */
+    public function test_barang_lama_tetap_muncul_di_balik_riwayat_panjang(): void
+    {
+        $c = $this->pelanggan();
+        $this->titip($c, 'Sepatu andalan');
+
+        // 30 titipan berikutnya, tapi cuma dua barang — persis pola pelanggan rutin.
+        for ($i = 0; $i < 30; $i++) {
+            $this->titip($c, $i % 2 === 0 ? 'Tas kerja' : 'Koper kabin');
+        }
+
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $nama = array_column($this->getJson('/api/customer/items')->assertOk()->json('data'), 'name');
+
+        $this->assertContains('Sepatu andalan', $nama);
+        $this->assertCount(3, $nama);
+    }
+
+    public function test_titipan_berulang_dihitung_bukan_diulang(): void
+    {
+        $c = $this->pelanggan();
+        $this->titip($c, 'AF1 putih');
+        $this->titip($c, 'af1 PUTIH');
+        $this->titip($c, 'AF1 putih');
+
+        Sanctum::actingAs($c, ['*'], 'customer');
+        $data = $this->getJson('/api/customer/items')->assertOk()->json('data');
+
+        $this->assertCount(1, $data);
+        $this->assertSame(3, $data[0]['times']);
+    }
+
     public function test_membawa_barang_sendiri_beserta_fotonya(): void
     {
         $me = $this->pelanggan();

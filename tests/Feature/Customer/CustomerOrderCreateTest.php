@@ -10,6 +10,7 @@ use App\Models\Send;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\Treatment;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -207,6 +208,119 @@ class CustomerOrderCreateTest extends TestCase
             ]],
             'pickup' => ['method' => 'antar_sendiri'],
         ])->assertStatus(422);
+    }
+
+    /**
+     * Barang yang sudah punya foto TIDAK difoto ulang dan berkasnya TIDAK diduplikasi —
+     * baris baru menunjuk jalur yang sama persis. Menyalin berkasnya berarti satu
+     * sepatu yang dicuci sepuluh kali meninggalkan sepuluh gambar identik di disk.
+     */
+    public function test_reused_item_points_at_the_same_photo_path(): void
+    {
+        $customer = $this->customer();
+        Sanctum::actingAs($customer, ['*'], 'customer');
+
+        $lama = OrderItem::withoutGlobalScope('branch')->create([
+            'projects_id' => 1,
+            'orders_id' => Order::withoutGlobalScope('branch')->create([
+                'projects_id' => 1,
+                'customers_id' => $customer->id,
+                'code' => 'INV202601000',
+                'date' => time(),
+                'status' => 0,
+            ])->id,
+            'name' => 'AF1 putih',
+            'type' => 2,
+            'photo' => 'orders_items/af1-lama.jpg',
+            'status' => 0,
+        ]);
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 2,
+                'name' => 'AF1 putih',
+                'from_item_id' => $lama->id,
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertCreated();
+
+        $baru = OrderItem::withoutGlobalScope('branch')->orderByDesc('id')->first();
+
+        $this->assertSame('orders_items/af1-lama.jpg', $baru->photo);
+    }
+
+    /** Foto milik pelanggan lain tidak boleh bisa ditarik cuma dengan menebak id. */
+    public function test_reused_item_of_another_customer_is_ignored(): void
+    {
+        $orang = Customer::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'name' => 'Orang lain', 'phone' => '81299998888',
+        ]);
+        $milikOrang = OrderItem::withoutGlobalScope('branch')->create([
+            'projects_id' => 1,
+            'orders_id' => Order::withoutGlobalScope('branch')->create([
+                'projects_id' => 1,
+                'customers_id' => $orang->id,
+                'code' => 'INV202601999',
+                'date' => time(),
+                'status' => 0,
+            ])->id,
+            'name' => 'Tas orang lain',
+            'type' => 1,
+            'photo' => 'orders_items/rahasia.jpg',
+            'status' => 0,
+        ]);
+
+        Sanctum::actingAs($this->customer(), ['*'], 'customer');
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 1,
+                'name' => 'Tas saya',
+                'from_item_id' => $milikOrang->id,
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertCreated();
+
+        $this->assertNull(
+            OrderItem::withoutGlobalScope('branch')->orderByDesc('id')->first()->photo
+        );
+    }
+
+    public function test_item_photo_is_stored_as_a_file_not_base64(): void
+    {
+        Storage::fake('public');
+
+        if (! extension_loaded('gd')) {
+            $this->markTestSkipped('Ekstensi GD tidak tersedia.');
+        }
+
+        Sanctum::actingAs($this->customer(), ['*'], 'customer');
+
+        $img = imagecreatetruecolor(1400, 900);
+        ob_start();
+        imagejpeg($img, null, 90);
+        $dataUrl = 'data:image/jpeg;base64,'.base64_encode((string) ob_get_clean());
+        imagedestroy($img);
+
+        $this->postJson('/api/customer/orders', [
+            'items' => [[
+                'type' => 2,
+                'name' => 'AF1 putih',
+                'photo' => $dataUrl,
+            ]],
+            'pickup' => ['method' => 'antar_sendiri'],
+        ])->assertCreated();
+
+        $jalur = OrderItem::withoutGlobalScope('branch')->first()->photo;
+
+        // Yang tersimpan di kolom adalah JALUR, bukan gambarnya. Kalau base64-nya
+        // ditelan bulat-bulat, kolom TEXT memotongnya diam-diam jadi berkas rusak.
+        $this->assertStringStartsWith('orders_items/', $jalur);
+        Storage::disk('public')->assertExists($jalur);
+
+        // Server mengecilkan sendiri ke 1080 px, tidak percaya ukuran dari klien.
+        $ukuran = getimagesizefromstring(Storage::disk('public')->get($jalur));
+        $this->assertSame(1080, $ukuran[0]);
     }
 
     public function test_pickup_creates_send_row_and_copies_address(): void

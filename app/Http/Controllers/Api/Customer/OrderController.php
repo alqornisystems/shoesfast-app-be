@@ -11,6 +11,7 @@ use App\Models\Send;
 use App\Models\Service;
 use App\Models\Treatment;
 use App\Services\PickupZoneService;
+use App\Support\Base64Image;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -122,28 +123,68 @@ class OrderController extends Controller
     {
         $customer = $request->user();
 
-        $items = OrderItem::withoutGlobalScope('branch')
+        $riwayat = OrderItem::withoutGlobalScope('branch')
             ->whereIn('orders_id', $this->scopedOrders($customer)->select('id'))
             ->orderByDesc('id')
-            // Dibatasi: daftar ini muncul di layar pesan, bukan di riwayat. Pelanggan
-            // lama bisa punya ratusan baris, dan yang berguna hanya yang teratas.
-            ->limit(24)
+            // Dipindai lebih dalam daripada yang ditampilkan: pengelompokan baru
+            // benar kalau titipan berulang atas barang yang sama memang bertemu satu
+            // sama lain. Memindai 24 baris lalu mengelompokkannya berarti pelanggan
+            // yang sebulan lalu menitipkan enam pasang sekaligus kehilangan sepatu
+            // lamanya dari daftar.
+            ->limit(120)
             ->get();
 
-        // Satu baris per barang, bukan per titipan. Sepatu yang sudah lima kali dicuci
-        // tidak perlu muncul lima kali dan mendorong barang lain keluar layar.
-        $unik = $items
-            ->unique(fn (OrderItem $item) => mb_strtolower(trim((string) $item->name)).'|'.(int) $item->type)
-            ->take(12);
+        // Satu baris per BARANG, bukan per titipan. Kuncinya nama + jenis: itulah yang
+        // membuat sepasang sepatu yang sudah lima kali dicuci tetap satu barang, bukan
+        // lima. Baris terbaru yang mewakili — fotonya paling mendekati rupa barang
+        // sekarang, dan kelengkapannya paling mendekati yang biasa ikut.
+        $grup = $riwayat
+            ->groupBy(fn (OrderItem $item) => mb_strtolower(trim((string) $item->name)).'|'.(int) $item->type)
+            ->map(function ($titipan) {
+                /** @var OrderItem $terbaru */
+                $terbaru = $titipan->first();
 
-        return response()->json([
-            'data' => $unik->map(fn (OrderItem $item) => [
-                'name' => $item->name,
-                'type' => (int) $item->type,
-                'photo' => \App\Support\Base64Image::url($item->photo),
-                'last_at' => $item->created_at,
-            ])->values(),
-        ]);
+                return [
+                    // Dipakai klien untuk menunjuk barang ini saat memesan lagi. Foto
+                    // dan jalurnya disalin di server dari baris ini, jadi klien tidak
+                    // perlu — dan tidak boleh — mengirim balik URL foto apa pun.
+                    'id' => $terbaru->id,
+                    'name' => $terbaru->name,
+                    'type' => (int) $terbaru->type,
+                    'photo' => Base64Image::url($terbaru->photo),
+                    'kelengkapan' => $this->checkboxFlags($terbaru),
+                    'times' => $titipan->count(),
+                    'last_at' => $terbaru->created_at,
+                ];
+            })
+            ->sortByDesc('last_at')
+            ->take(20)
+            ->values();
+
+        return response()->json(['data' => $grup]);
+    }
+
+    /**
+     * Centang kelengkapan sebagai deretan boolean, panjangnya mengikuti jenis.
+     *
+     * Bedanya dengan kelengkapan(): yang itu mengembalikan LABEL yang tercentang untuk
+     * dibaca manusia, yang ini bentuk mentahnya untuk mengisi ulang formulir.
+     *
+     * @return list<bool>
+     */
+    private function checkboxFlags(OrderItem $item): array
+    {
+        $panjang = count(self::checklistFor((int) $item->type));
+        $flags = $item->checkbox
+            ? array_map(fn ($nilai) => trim($nilai) === 'true', explode(',', $item->checkbox))
+            : [];
+
+        $hasil = [];
+        for ($i = 0; $i < $panjang; $i++) {
+            $hasil[] = $flags[$i] ?? false;
+        }
+
+        return $hasil;
     }
 
     // GET /api/customer/orders/{id}
@@ -242,6 +283,15 @@ class OrderController extends Controller
             'items.*.checkbox' => ['nullable', 'array'],
             'items.*.checkbox.*' => ['boolean'],
             'items.*.note' => ['nullable', 'string'],
+            // Data URL hasil kamera ponsel, sudah dikecilkan klien ke 1080 px.
+            // Batasnya longgar karena yang tersimpan di kolom cuma JALUR berkas —
+            // gambarnya sendiri ditulis ke disk oleh Base64Image. Tetap dibatasi:
+            // tanpa atap, satu request bisa menyuruh server mendekode gambar 50 MB.
+            'items.*.photo' => ['nullable', 'string', 'max:1300000'],
+            // Menunjuk barang yang pernah dititipkan, supaya fotonya disalin di sini
+            // tanpa pelanggan memotret ulang. Kepemilikannya diperiksa, bukan
+            // dipercaya: id milik orang lain akan diabaikan.
+            'items.*.from_item_id' => ['nullable', 'integer'],
             'items.*.services' => ['nullable', 'array', 'max:10'],
             'items.*.services.*' => ['integer', 'exists:services,id'],
             'pickup.method' => ['required', 'in:jemput,antar_sendiri,ekspedisi'],
@@ -293,6 +343,8 @@ class OrderController extends Controller
                     'discount' => 0,
                     'status' => 0,
                     'note' => $itemData['note'] ?? null,
+                    'photo' => $this->simpanFotoBarang($itemData['photo'] ?? null, $order->id)
+                        ?? $this->fotoBarangLama($customer, $itemData['from_item_id'] ?? null),
                     'checkbox' => $this->serializeCheckbox($itemData),
                 ]);
 
@@ -322,6 +374,48 @@ class OrderController extends Controller
             'code' => $order->code,
             'free_pickup' => $freePickup,
         ], 201);
+    }
+
+    /**
+     * Foto barang dari pelanggan.
+     *
+     * Folder dan pemroses yang sama dengan unggahan admin, jadi keduanya menghasilkan
+     * jalur berbentuk sama dan pembaca mana pun tidak perlu tahu siapa yang mengunggah.
+     *
+     * Nilai yang bukan data URL diabaikan, bukan disimpan apa adanya: satu-satunya
+     * pengirim endpoint ini adalah formulir pesanan baru yang tidak punya foto lama
+     * untuk dikirim balik, jadi apa pun selain data URL adalah salah kirim.
+     */
+    private function simpanFotoBarang(?string $foto, int $orderId): ?string
+    {
+        if (empty($foto) || ! str_starts_with($foto, 'data:image/')) {
+            return null;
+        }
+
+        return Base64Image::store($foto, 'orders_items', 'item-'.$orderId.'-'.uniqid());
+    }
+
+    /**
+     * Jalur foto milik barang yang pernah dititipkan pelanggan INI.
+     *
+     * Dipakai saat pelanggan memesan lagi untuk barang yang sama: fotonya tidak perlu
+     * diambil ulang, dan klien tidak perlu mengirim balik URL apa pun. Yang dikirim
+     * cuma id barang lama, lalu server yang membacanya — jadi tidak ada jalan bagi
+     * siapa pun untuk menyisipkan alamat gambar sembarangan ke dalam pesanan.
+     *
+     * Kepemilikan diperiksa lewat scopedOrders(): id milik pelanggan lain menghasilkan
+     * null, bukan foto orang lain.
+     */
+    private function fotoBarangLama(Customer $customer, ?int $itemId): ?string
+    {
+        if (! $itemId) {
+            return null;
+        }
+
+        return OrderItem::withoutGlobalScope('branch')
+            ->where('id', $itemId)
+            ->whereIn('orders_id', $this->scopedOrders($customer)->select('id'))
+            ->value('photo');
     }
 
     /**
