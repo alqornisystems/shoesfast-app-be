@@ -129,6 +129,9 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
     Route::get('orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
     Route::post('orders/{id}/items/{itemId}/claim', [CustomerClaimController::class, 'store']);
     Route::get('claims', [CustomerClaimController::class, 'index']);
+    // Barang yang pernah dititipkan — dipakai layar pesan supaya pelanggan tidak
+    // perlu mengetik ulang sepatu yang sama tiap kali.
+    Route::get('items', [CustomerOrderController::class, 'items']);
     Route::get('orders/{id}', [CustomerOrderController::class, 'show']);
 
     Route::post('membership/join', [CustomerMembershipController::class, 'join']);

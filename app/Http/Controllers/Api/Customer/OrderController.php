@@ -82,6 +82,50 @@ class OrderController extends Controller
         return response()->json($paginator);
     }
 
+    /**
+     * GET /api/customer/items
+     *
+     * Barang yang pernah dititipkan pelanggan ini, terbaru dulu.
+     *
+     * Alasannya sederhana: orang menitipkan sepatu yang sama berulang kali, dan
+     * mengetik ulang "Nike Air Force 1 putih" tiap kali adalah pekerjaan yang tidak
+     * menghasilkan apa pun — sekaligus sumber salah ketik yang membuat dua baris di
+     * database terlihat seperti dua sepatu berbeda.
+     *
+     * Fotonya ikut karena itulah yang benar-benar dikenali orang. Nama yang ditulis
+     * petugas ("AF1 putih", "sepatu putih") tidak selalu sama dengan yang ada di kepala
+     * pemiliknya; fotonya selalu.
+     */
+    public function items(Request $request): JsonResponse
+    {
+        $customer = $request->user();
+
+        $items = OrderItem::withoutGlobalScope('branch')
+            ->whereIn('orders_id', $this->scopedOrders($customer)->select('id'))
+            ->orderByDesc('id')
+            // Dibatasi: daftar ini muncul di layar pesan, bukan di riwayat. Pelanggan
+            // lama bisa punya ratusan baris, dan yang berguna hanya yang teratas.
+            ->limit(24)
+            ->get();
+
+        // Satu baris per barang, bukan per titipan. Sepatu yang sudah lima kali dicuci
+        // tidak perlu muncul lima kali dan mendorong barang lain keluar layar.
+        $unik = $items
+            ->unique(fn (OrderItem $item) => mb_strtolower(trim((string) $item->name)).'|'.(int) $item->type)
+            ->take(12);
+
+        return response()->json([
+            'data' => $unik->map(fn (OrderItem $item) => [
+                'name' => $item->name,
+                'type' => (int) $item->type,
+                'photo' => $item->photo
+                    ? (filter_var($item->photo, FILTER_VALIDATE_URL) ? $item->photo : asset('storage/'.$item->photo))
+                    : null,
+                'last_at' => $item->created_at,
+            ])->values(),
+        ]);
+    }
+
     // GET /api/customer/orders/{id}
     public function show(Request $request, int $id): JsonResponse
     {
