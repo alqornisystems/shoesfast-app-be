@@ -7,7 +7,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Services\CustomerPointService;
 use App\Services\ReportCacheService;
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -196,7 +196,7 @@ class PaymentController extends Controller
      */
     /**
      * Bukti pembayaran. Pendekodean, pelurusan orientasi, dan penyesuaian lebar ke 1080px
-     * dikerjakan FotoBase64 bersama seluruh jalur unggah lain.
+     * dikerjakan Base64Image bersama seluruh jalur unggah lain.
      *
      * Awalan "storage/" pada nilai kembalian DIPERTAHANKAN: baris pembayaran lama sudah
      * menyimpannya dalam bentuk itu, dan mengubah bentuknya sekarang membuat foto lama
@@ -208,7 +208,7 @@ class PaymentController extends Controller
             return null;
         }
 
-        return 'storage/'.FotoBase64::simpan($base64String, $folder);
+        return 'storage/'.Base64Image::store($base64String, $folder);
     }
 
     /**

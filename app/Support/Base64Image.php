@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Storage;
  * 2. Gambar dilebarkan-paskan ke 1080px. Foto kamera HP hari ini 3000-4000px dan 3-5 MB;
  *    yang dibuka kurir di layar 6 inci lewat kuota sendiri tidak butuh sebesar itu.
  */
-class FotoBase64
+class Base64Image
 {
     /** Lebar maksimum. Tinggi mengikuti rasio aslinya. */
     public const LEBAR_MAKS = 1080;
@@ -39,7 +39,7 @@ class FotoBase64
      *
      * @throws \RuntimeException kalau data URL-nya tidak bisa didekode
      */
-    public static function simpan(string $nilai, string $folder, ?string $namaDasar = null): string
+    public static function store(string $nilai, string $folder, ?string $namaDasar = null): string
     {
         if (! preg_match('/^data:image\/(\w+);base64,/', $nilai, $cocok)) {
             // Bukan unggahan baru. Dua kemungkinan, dan keduanya dibiarkan lewat:

@@ -66,6 +66,12 @@ return [
     |
     */
 
+    /*
+    | Alamat portal pelanggan. Dipakai menyusun tautan pelacakan yang dikirim kurir
+    | lewat WhatsApp. Terpisah dari frontend_url yang menunjuk panel admin.
+    */
+    'customer_portal_url' => rtrim((string) env('CUSTOMER_PORTAL_URL', 'https://customer.shoesfast.id'), '/'),
+
     'frontend_url' => trim(explode(',', (string) env('FRONTEND_URL', ''))[0]),
 
     /*

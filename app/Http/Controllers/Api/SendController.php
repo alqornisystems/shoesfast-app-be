@@ -13,7 +13,7 @@ use App\Services\FcmService;
 use App\Services\NotifikasiTugas;
 use App\Services\ReportCacheService;
 use App\Services\WhatsAppService;
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -800,6 +800,11 @@ class SendController extends Controller
                     'modified_by' => auth()->id(),
                 ]);
 
+                // Tugas berakhir, pelacakan berhenti. Tautan yang masih menyiarkan posisi
+                // setelah barang diserahkan adalah kebocoran yang tidak ada yang
+                // menyadarinya — tidak ada layar yang menampilkannya lagi.
+                $this->cabutPelacakan($send);
+
                 // Update related order/item status
                 if ($send->type == 0) { // Pickup
                     Order::where('id', $send->orders_id)
@@ -1109,7 +1114,7 @@ class SendController extends Controller
         }
 
         try {
-            return FotoBase64::simpan($dataUrl, 'sends');
+            return Base64Image::store($dataUrl, 'sends');
         } catch (\Throwable $e) {
             return null;
         }
@@ -1307,12 +1312,110 @@ class SendController extends Controller
         }
 
         $send->update($update);
+        $this->cabutPelacakan($send);
 
         return response()->json([
             'message' => 'Tugas ditandai gagal',
             'status' => Send::STATUS_GAGAL,
             'failed_at' => $update['failed_at'],
             'reschedule_date' => $update['reschedule_date'],
+        ]);
+    }
+
+    /**
+     * Terbitkan token pelacakan kalau belum ada atau sudah kedaluwarsa.
+     *
+     * Token ACAK, bukan turunan `sends_id`: id yang bisa ditebak berarti tautan yang bisa
+     * ditebak, dan tautan yang bisa ditebak berarti posisi karyawan bisa dibaca siapa saja
+     * yang iseng menghitung. Satu token satu tugas — tugas kedua ke pelanggan yang sama
+     * mendapat token kedua.
+     */
+    private function pastikanTokenPelacakan(Send $send): void
+    {
+        $masihHidup = $send->tracking_token !== null
+            && $send->tracking_expires_at !== null
+            && $send->tracking_expires_at > time();
+
+        if ($masihHidup) {
+            return;
+        }
+
+        $send->update([
+            'tracking_token' => bin2hex(random_bytes(20)),
+            'tracking_expires_at' => time() + Send::TRACKING_TTL_DETIK,
+        ]);
+    }
+
+    /**
+     * Cabut pelacakan: tautannya mati DAN posisi terakhirnya dihapus.
+     *
+     * Menghapus posisinya bukan kerapian — tugas yang sudah selesai tetapi datanya masih
+     * tersimpan adalah kebocoran yang tidak ada yang menyadarinya, karena tidak ada layar
+     * mana pun yang menampilkannya lagi.
+     */
+    private function cabutPelacakan(Send $send): void
+    {
+        if ($send->tracking_token === null && $send->courier_position_at === null) {
+            return;
+        }
+
+        $send->update([
+            'tracking_token' => null,
+            'tracking_expires_at' => null,
+            'courier_latitude' => null,
+            'courier_longitude' => null,
+            'courier_accuracy' => null,
+            'courier_position_at' => null,
+        ]);
+    }
+
+    private function tautanPelacakan(?string $token): ?string
+    {
+        return $token === null
+            ? null
+            : rtrim((string) config('app.customer_portal_url'), '/').'/lacak/'.$token;
+    }
+
+    /**
+     * POST /api/sends/{id}/location
+     *
+     * Aplikasi kurir mengirim posisinya selama tugas berjalan. Yang disimpan hanya posisi
+     * TERAKHIR — riwayat jejak satu jam adalah peta kebiasaan seseorang, dan tidak ada satu
+     * pun pertanyaan pelanggan yang membutuhkannya.
+     */
+    public function recordLocation(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'latitude' => ['required', 'numeric', 'between:-90,90'],
+            'longitude' => ['required', 'numeric', 'between:-180,180'],
+            'accuracy' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $send = $this->findTask($request, $id);
+
+        if (! $send) {
+            return response()->json(['message' => 'Pengiriman tidak ditemukan.'], 404);
+        }
+
+        // Tugas yang sudah berakhir berhenti menyiarkan, apa pun yang dikirim aplikasi.
+        // Kurir yang lupa mematikan pelacakan tidak boleh terus terlihat pelanggan.
+        if ($send->status !== Send::STATUS_BERJALAN) {
+            return response()->json([
+                'message' => 'Tugas ini sudah tidak berjalan.',
+            ], 422);
+        }
+
+        $send->update([
+            'courier_latitude' => $validated['latitude'],
+            'courier_longitude' => $validated['longitude'],
+            'courier_accuracy' => $validated['accuracy'] ?? null,
+            'courier_position_at' => time(),
+        ]);
+
+        return response()->json([
+            'tracking_expires_at' => $send->tracking_expires_at !== null
+                ? (int) $send->tracking_expires_at
+                : null,
         ]);
     }
 
@@ -1345,8 +1448,15 @@ class SendController extends Controller
             ]);
         }
 
+        // Berangkat adalah satu-satunya saat yang benar untuk membuka pelacakan: sebelum
+        // itu tidak ada yang bergerak, dan sesudah tugas berakhir tautannya harus mati.
+        $this->pastikanTokenPelacakan($send);
+
         return response()->json([
             'started_at' => (int) $send->started_at,
+            'tracking_token' => $send->tracking_token,
+            'tracking_url' => $this->tautanPelacakan($send->tracking_token),
+            'tracking_expires_at' => (int) $send->tracking_expires_at,
         ]);
     }
 

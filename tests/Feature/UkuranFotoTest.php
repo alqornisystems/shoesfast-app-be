@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -50,7 +50,7 @@ class UkuranFotoTest extends TestCase
 
     public function test_foto_lebar_dikecilkan_ke_1080_dengan_rasio_terjaga(): void
     {
-        $jalur = FotoBase64::simpan($this->gambar(3000, 2000), 'users');
+        $jalur = Base64Image::store($this->gambar(3000, 2000), 'users');
 
         [$lebar, $tinggi] = $this->dimensi($jalur);
 
@@ -61,7 +61,7 @@ class UkuranFotoTest extends TestCase
 
     public function test_foto_potret_juga_dipatok_lebarnya(): void
     {
-        $jalur = FotoBase64::simpan($this->gambar(2000, 3000), 'sends');
+        $jalur = Base64Image::store($this->gambar(2000, 3000), 'sends');
 
         [$lebar, $tinggi] = $this->dimensi($jalur);
 
@@ -72,7 +72,7 @@ class UkuranFotoTest extends TestCase
     /** Membesarkan hanya menambah berkas tanpa menambah detail, dan hasilnya lebih buram. */
     public function test_gambar_yang_sudah_kecil_tidak_dibesarkan(): void
     {
-        $jalur = FotoBase64::simpan($this->gambar(400, 300), 'users');
+        $jalur = Base64Image::store($this->gambar(400, 300), 'users');
 
         [$lebar, $tinggi] = $this->dimensi($jalur);
 
@@ -83,7 +83,7 @@ class UkuranFotoTest extends TestCase
     /** PNG buram dari kamera/tangkapan layar jauh lebih besar tanpa manfaat apa pun. */
     public function test_png_tanpa_transparansi_dikeluarkan_sebagai_jpg(): void
     {
-        $jalur = FotoBase64::simpan($this->gambar(2000, 1000, 'png'), 'absences');
+        $jalur = Base64Image::store($this->gambar(2000, 1000, 'png'), 'absences');
 
         $this->assertStringEndsWith('.jpg', $jalur);
         $this->assertSame(1080, $this->dimensi($jalur)[0]);
@@ -92,7 +92,7 @@ class UkuranFotoTest extends TestCase
     public function test_hasilnya_jauh_lebih_kecil_dari_aslinya(): void
     {
         $asli = $this->gambar(3000, 2000);
-        $jalur = FotoBase64::simpan($asli, 'users');
+        $jalur = Base64Image::store($asli, 'users');
 
         $besarAsli = strlen(base64_decode(substr($asli, strpos($asli, ',') + 1)));
         $besarBaru = strlen(Storage::disk('public')->get($jalur));
@@ -103,13 +103,13 @@ class UkuranFotoTest extends TestCase
     /** Nilai yang bukan data URL harus lewat tanpa disentuh. */
     public function test_jalur_lama_dan_url_absolut_dibiarkan(): void
     {
-        $this->assertSame('users/lama.jpg', FotoBase64::simpan('users/lama.jpg', 'users'));
+        $this->assertSame('users/lama.jpg', Base64Image::store('users/lama.jpg', 'users'));
 
         // URL data lama — domainnya bahkan sudah tidak dipakai lagi. Dibiarkan apa adanya;
         // tidak ada berkas asli untuk diproses ulang.
         $this->assertSame(
             'https://app.shoesfastind.com/img/customers/customer-1749096040.png',
-            FotoBase64::simpan('https://app.shoesfastind.com/img/customers/customer-1749096040.png', 'users')
+            Base64Image::store('https://app.shoesfastind.com/img/customers/customer-1749096040.png', 'users')
         );
     }
 
@@ -123,13 +123,13 @@ class UkuranFotoTest extends TestCase
     {
         $urlSendiri = asset('storage/users/foto.jpg');
 
-        $this->assertSame('users/foto.jpg', FotoBase64::simpan($urlSendiri, 'users'));
+        $this->assertSame('users/foto.jpg', Base64Image::store($urlSendiri, 'users'));
     }
 
     public function test_url_menjadi_dan_kembali_dari_jalur_secara_konsisten(): void
     {
         $jalur = 'sends/bukti.jpg';
 
-        $this->assertSame($jalur, FotoBase64::simpan(FotoBase64::url($jalur), 'sends'));
+        $this->assertSame($jalur, Base64Image::store(Base64Image::url($jalur), 'sends'));
     }
 }

@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -48,7 +48,7 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
-                'photo' => FotoBase64::url($user->photo),
+                'photo' => Base64Image::url($user->photo),
                 'roles_id' => $user->roles_id,
                 'role_name' => $user->role?->name,
                 'projects_id' => $user->projects_id,
@@ -86,7 +86,7 @@ class UserController extends Controller
             // karyawan mengizinkan berkas sampai 2 MB, dan sebagai base64 itu ~2,7 juta
             // karakter — jauh melewati batas kolom TEXT, dipotong MySQL tanpa galat.
             'photo' => ! empty($validated['photo'])
-                ? FotoBase64::simpan($validated['photo'], 'users')
+                ? Base64Image::store($validated['photo'], 'users')
                 : null,
             'roles_id' => $validated['roles_id'],
             'projects_id' => $validated['projects_id'] ?? null,
@@ -99,7 +99,7 @@ class UserController extends Controller
         // Dinormalkan di memori saja (tidak disimpan): layar karyawan menyeed formulir
         // edit dari nilai yang dibacanya, jadi yang dikirim balik harus berupa URL yang
         // bisa langsung dipasang di <img>, bukan jalur telanjang.
-        $user->photo = FotoBase64::url($user->photo);
+        $user->photo = Base64Image::url($user->photo);
 
         return response()->json([
             'message' => 'Karyawan berhasil ditambahkan.',
@@ -118,7 +118,7 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
-                'photo' => FotoBase64::url($user->photo),
+                'photo' => Base64Image::url($user->photo),
                 'roles_id' => $user->roles_id,
                 'role_name' => $user->role?->name,
                 'projects_id' => $user->projects_id,
@@ -163,13 +163,13 @@ class UserController extends Controller
 
         // Only update photo if provided
         if (isset($validated['photo'])) {
-            $data['photo'] = FotoBase64::simpan($validated['photo'], 'users');
+            $data['photo'] = Base64Image::store($validated['photo'], 'users');
         }
 
         $user->update($data);
 
         $segar = $user->fresh()->load('role');
-        $segar->photo = FotoBase64::url($segar->photo);
+        $segar->photo = Base64Image::url($segar->photo);
 
         return response()->json([
             'message' => 'Karyawan berhasil diperbarui.',

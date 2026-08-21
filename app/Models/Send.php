@@ -35,7 +35,24 @@ class Send extends Model
         'proof_latitude',
         'proof_longitude',
         'proof_at',
+        // Sesi pelacakan pelanggan
+        'tracking_token',
+        'tracking_expires_at',
+        'courier_latitude',
+        'courier_longitude',
+        'courier_accuracy',
+        'courier_position_at',
     ];
+
+    /**
+     * Umur tautan pelacakan. Tugas yang lupa ditutup kurir tetap berhenti menyiarkan
+     * posisinya setelah ini — batas waktu adalah penjaga terakhir kalau penutupan manual
+     * tidak pernah terjadi.
+     */
+    const TRACKING_TTL_DETIK = 6 * 3600;
+
+    /** Di bawah jarak ini kurir dianggap sudah sampai di depan alamat. */
+    const RADIUS_TIBA_METER = 100;
 
     /**
      * Nilai kolom `status`. Ditulis sebagai konstanta karena angkanya tersebar di
@@ -62,6 +79,8 @@ class Send extends Model
         'failed_at' => 'integer',
         'reschedule_date' => 'integer',
         'proof_at' => 'integer',
+        'tracking_expires_at' => 'integer',
+        'courier_position_at' => 'integer',
     ];
 
     const UPDATED_AT = 'modified_at';

@@ -128,6 +128,14 @@ trait CreatesFieldTaskSchema
             $t->decimal('proof_latitude', 10, 8)->nullable();
             $t->decimal('proof_longitude', 11, 8)->nullable();
             $t->integer('proof_at')->nullable();
+            // Sesi pelacakan pelanggan — cermin migrasi
+            // 2026_08_21_000001_add_tracking_columns_to_sends_table.
+            $t->string('tracking_token', 64)->nullable()->unique();
+            $t->integer('tracking_expires_at')->nullable();
+            $t->decimal('courier_latitude', 10, 8)->nullable();
+            $t->decimal('courier_longitude', 11, 8)->nullable();
+            $t->float('courier_accuracy')->nullable();
+            $t->integer('courier_position_at')->nullable();
         });
 
         Schema::create('device_tokens', function (Blueprint $t) {

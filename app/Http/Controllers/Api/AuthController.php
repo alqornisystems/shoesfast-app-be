@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DeviceToken;
 use App\Models\User;
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -241,7 +241,7 @@ class AuthController extends Controller
             // diam-diam dan fotonya rusak tanpa satu pun galat.
             $foto = $validated['photo'] === null
                 ? null
-                : FotoBase64::simpan($validated['photo'], 'users');
+                : Base64Image::store($validated['photo'], 'users');
         }
 
         $user->update([

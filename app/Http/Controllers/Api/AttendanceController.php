@@ -9,7 +9,7 @@ use App\Models\DailyNote;
 use App\Models\Holiday;
 use App\Models\Project;
 use App\Services\NotifikasiTugas;
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -558,7 +558,7 @@ class AttendanceController extends Controller
             throw new \Exception('Format gambar tidak dikenali');
         }
 
-        return FotoBase64::simpan($dataUrl, 'absences');
+        return Base64Image::store($dataUrl, 'absences');
     }
 
     /**

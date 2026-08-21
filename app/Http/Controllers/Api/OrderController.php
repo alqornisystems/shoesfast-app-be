@@ -9,7 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Treatment;
 use App\Services\ReportCacheService;
 use App\Services\WhatsAppService;
-use App\Support\FotoBase64;
+use App\Support\Base64Image;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -827,7 +827,7 @@ class OrderController extends Controller
      */
     /**
      * Foto barang pesanan. Pendekodean, pelurusan orientasi EXIF, dan penyesuaian lebar
-     * ke 1080px dikerjakan FotoBase64 supaya semua jalur unggah berperilaku sama.
+     * ke 1080px dikerjakan Base64Image supaya semua jalur unggah berperilaku sama.
      */
     private function uploadBase64Image($base64String, $filename)
     {
@@ -835,7 +835,7 @@ class OrderController extends Controller
             throw new \Exception('Invalid image format');
         }
 
-        return FotoBase64::simpan($base64String, 'orders_items', $filename);
+        return Base64Image::store($base64String, 'orders_items', $filename);
     }
 
     /**

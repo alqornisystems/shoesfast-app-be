@@ -136,7 +136,31 @@ Kolom baru, **bukan** memakai ulang `date_start`. Yang itu jadwal rencana: ia me
 waiting list sekaligus menjadi penyebut perhitungan `progress`, jadi menimpanya saat
 teknisi menekan "mulai" akan menggeser antrean dan membuat progress melompat mundur ke nol.
 
-## 6. Baris `settings` untuk gerbang versi aplikasi
+## 6. Sesi pelacakan kurir di `sends`
+
+Setara migrasi `2026_08_21_000001_add_tracking_columns_to_sends_table`. Dibutuhkan tautan
+pelacakan yang dibuka pelanggan dari WhatsApp.
+
+```sql
+ALTER TABLE `sends`
+  ADD COLUMN IF NOT EXISTS `tracking_token`      VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `tracking_expires_at` INT(11) NULL,
+  ADD COLUMN IF NOT EXISTS `courier_latitude`    DECIMAL(10,8) NULL,
+  ADD COLUMN IF NOT EXISTS `courier_longitude`   DECIMAL(11,8) NULL,
+  ADD COLUMN IF NOT EXISTS `courier_accuracy`    FLOAT NULL,
+  ADD COLUMN IF NOT EXISTS `courier_position_at` INT(11) NULL;
+
+-- Unik: satu token satu tugas, dan pencarian token dilakukan tiap kali halaman
+-- pelacakan menyegarkan dirinya.
+ALTER TABLE `sends`
+  ADD UNIQUE INDEX IF NOT EXISTS `sends_tracking_token_unique` (`tracking_token`);
+```
+
+Yang disimpan hanya posisi **terakhir**, bukan jejak. Riwayat satu jam adalah peta
+kebiasaan seseorang, dan tidak ada satu pun pertanyaan pelanggan yang membutuhkannya.
+Keenam kolom ini dikosongkan lagi begitu tugasnya selesai atau gagal.
+
+## 7. Baris `settings` untuk gerbang versi aplikasi
 
 Bukan perubahan skema, tapi tanpa ini gerbang versi aplikasi mobile tidak melakukan apa-apa.
 Nilai di bawah aman — `0.0.0` berarti gerbangnya mati dan tidak mengunci siapa pun.
@@ -161,6 +185,7 @@ Periksa hasilnya:
 ```sql
 SHOW COLUMNS FROM `sends` LIKE 'proof_%';
 SHOW COLUMNS FROM `treatments` LIKE 'started_at';
+SHOW COLUMNS FROM `sends` LIKE 'tracking_%';
 SHOW TABLES LIKE 'device_tokens';
 SELECT `key`, `value` FROM `settings` WHERE `key` LIKE 'app_%';
 ```
@@ -174,9 +199,10 @@ INSERT IGNORE INTO `migrations` (`migration`, `batch`) VALUES
   ('2026_07_28_000002_create_rewards_tables',              (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_13_000001_add_field_task_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b)),
   ('2026_08_13_000002_create_device_tokens_table',         (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
-  ('2026_08_13_000003_add_started_at_to_treatments_table',  (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b));
+  ('2026_08_13_000003_add_started_at_to_treatments_table',  (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
+  ('2026_08_21_000001_add_tracking_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b));
 ```
 
-Sebenarnya kelima migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
+Sebenarnya keenam migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
 menjalankan `php artisan migrate` setelah SQL ini pun tidak akan merusak apa pun — ia hanya
 akan melewati yang sudah ada.

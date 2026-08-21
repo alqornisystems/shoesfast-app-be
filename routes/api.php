@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SendController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServiceHppController;
+use App\Http\Controllers\Api\TrackingController;
 use App\Http\Controllers\Api\TreatmentController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebhookController;
@@ -93,6 +94,13 @@ Route::get('customer/services', [CustomerCatalogController::class, 'index'])
 // permintaan. Publik karena calon pelanggan boleh membacanya sebelum masuk.
 Route::get('customer/settings', [CustomerSettingController::class, 'index'])
     ->middleware('throttle:60,1');
+
+// Pelacakan kurir yang dibuka pelanggan dari tautan WhatsApp. Publik dan tanpa login:
+// menuntut akun untuk pertanyaan "kurir saya di mana" berarti tidak ada yang memakainya.
+// Penjaganya token acak 40 karakter + masa berlaku, bukan sesi. Throttle-nya longgar
+// karena halaman memanggil ini berulang selama peta terbuka.
+Route::get('lacak/{token}', [TrackingController::class, 'show'])
+    ->middleware('throttle:120,1');
 
 // Gerbang versi aplikasi mobile, dibaca saat splash. Publik dengan sengaja: kalau ia
 // menuntut token, aplikasi yang kontraknya sudah tidak kompatibel harus berhasil login
@@ -224,6 +232,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('sends/{id}/proof', [SendController::class, 'storeProof']);
         Route::post('sends/{id}/failed', [SendController::class, 'markFailed']);
         Route::post('sends/{id}/start', [SendController::class, 'start']);
+        // Aplikasi kurir mengirim posisinya selama tugas berjalan.
+        Route::post('sends/{id}/location', [SendController::class, 'recordLocation']);
         // Ambil satu tugas dari antrean jemput/antar — padanan treatments/claim.
         Route::post('sends/{id}/claim', [SendController::class, 'claimTask']);
 
