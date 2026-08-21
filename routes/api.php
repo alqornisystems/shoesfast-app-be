@@ -7,8 +7,10 @@ use App\Http\Controllers\Api\BroadcastController;
 use App\Http\Controllers\Api\Customer\AuthController as CustomerAuthController;
 use App\Http\Controllers\Api\Customer\CatalogController as CustomerCatalogController;
 use App\Http\Controllers\Api\Customer\ClaimController as CustomerClaimController;
+use App\Http\Controllers\Api\Customer\HandoverController as CustomerHandoverController;
 use App\Http\Controllers\Api\Customer\MembershipController as CustomerMembershipController;
 use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
+use App\Http\Controllers\Api\Customer\OrderItemController as CustomerOrderItemController;
 use App\Http\Controllers\Api\Customer\ProfileController as CustomerProfileController;
 use App\Http\Controllers\Api\Customer\RewardController as CustomerRewardController;
 use App\Http\Controllers\Api\Customer\SettingController as CustomerSettingController;
@@ -128,6 +130,15 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
     // sebagai {id} — aturan yang sudah berlaku di seluruh berkas ini.
     Route::get('orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
     Route::post('orders/{id}/items/{itemId}/claim', [CustomerClaimController::class, 'store']);
+
+    // Menyunting isi pesanan yang masih berjalan. Rute {itemId} ditulis SEBELUM
+    // 'orders/{id}' di bawah supaya tidak tertelan pola yang lebih longgar.
+    Route::post('orders/{id}/items', [CustomerOrderItemController::class, 'store']);
+    Route::patch('orders/{id}/items/{itemId}', [CustomerOrderItemController::class, 'update']);
+    Route::delete('orders/{id}/items/{itemId}', [CustomerOrderItemController::class, 'destroy']);
+
+    // Permintaan ambil atau antar barang yang sudah siap.
+    Route::post('orders/{id}/handover', [CustomerHandoverController::class, 'store']);
     Route::get('claims', [CustomerClaimController::class, 'index']);
     // Barang yang pernah dititipkan — dipakai layar pesan supaya pelanggan tidak
     // perlu mengetik ulang sepatu yang sama tiap kali.

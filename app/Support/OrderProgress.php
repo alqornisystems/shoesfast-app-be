@@ -45,6 +45,8 @@ class OrderProgress
     /** orders_items.status: 2 berarti seluruh treatment barang itu sudah selesai. */
     private const ITEM_SELESAI = 2;
 
+    private const ITEM_PROSES = 1;
+
     private const ITEM_BATAL = 3;
 
     /** @var Collection<int, Send> */
@@ -142,11 +144,41 @@ class OrderProgress
             // Barang yang harganya belum ditentukan belum bisa dilunasi, jadi belum
             // bisa diambil juga — dan itu memang benar: kasir tidak punya angka.
             'can_take' => $state === self::SIAP && $harga > 0 && $sisa === 0,
+            'permissions' => self::permissions($state),
             'history' => $this->history($item),
         ];
     }
 
-    private function state(OrderItem $item): string
+    /**
+     * Apa yang masih boleh diubah pelanggan atas barang ini.
+     *
+     * Batasnya bukan aturan buatan: barang yang sudah di rak punya akibat fisik. Nama
+     * boleh diganti selama belum selesai karena itu label, bukan pekerjaan. Menghapus
+     * barang yang sudah dibongkar teknisi bukan penyuntingan — itu masalah, dan
+     * masalah diselesaikan lewat orang, bukan lewat tombol.
+     *
+     * @return array{can_rename: bool, can_change_services: bool, can_remove: bool}
+     */
+    public static function permissions(string $state): array
+    {
+        $belumSelesai = in_array($state, [self::MENUNGGU, self::DIKERJAKAN], true);
+
+        return [
+            'can_rename' => $belumSelesai,
+            'can_change_services' => $belumSelesai,
+            'can_remove' => $state === self::MENUNGGU,
+        ];
+    }
+
+    /** Keadaan satu barang tanpa membangun seluruh rombongan — dipakai penjaga endpoint. */
+    public static function stateOf(Order $order, OrderItem $item): string
+    {
+        $item->loadMissing('treatments');
+
+        return (new self($order, collect([$item])))->state($item);
+    }
+
+    public function state(OrderItem $item): string
     {
         if ((int) $item->status === self::ITEM_BATAL) {
             return self::BATAL;
@@ -162,6 +194,13 @@ class OrderProgress
 
         if ((int) $item->status === self::ITEM_SELESAI) {
             return self::SIAP;
+        }
+
+        // Petugas menandai barangnya sedang diproses, kadang sebelum satu pun baris
+        // treatment dibuat. Mengabaikannya berarti barang yang sudah dibongkar di meja
+        // teknisi tetap terbaca "menunggu" — dan pelanggan masih ditawari tombol hapus.
+        if ((int) $item->status === self::ITEM_PROSES) {
+            return self::DIKERJAKAN;
         }
 
         // Satu treatment yang sudah jalan sudah cukup untuk menyebut barangnya

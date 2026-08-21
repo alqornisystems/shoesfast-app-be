@@ -12,6 +12,7 @@ use App\Models\Service;
 use App\Models\Treatment;
 use App\Services\PickupZoneService;
 use App\Support\Base64Image;
+use App\Support\ItemChecklist;
 use App\Support\OrderProgress;
 use App\Support\ServiceDay;
 use App\Support\WarrantyWindow;
@@ -32,33 +33,6 @@ class OrderController extends Controller
         2 => 'Siap diambil',
         3 => 'Selesai',
     ];
-
-    private const SHOE_CHECKLIST = ['Tali Sepatu', 'Kaos Kaki', 'Box Sepatu'];
-
-    private const BAG_CHECKLIST = [
-        'Dust Bag', 'Care Card/Card', 'Tali panjang', 'Tali pendek',
-        'Tag Brand', 'Price tag', 'Receipt',
-    ];
-
-    /**
-     * Daftar kelengkapan menurut jenis barang — cermin admin panel.
-     *
-     * Jenis "Lainnya" (0) memang TIDAK punya daftar centang di admin: koper, dompet,
-     * jam tangan tidak berbagi satu set kelengkapan, jadi yang dipakai kolom catatan
-     * bebas. Sebelumnya jenis ini diam-diam ikut memakai daftar sepatu, sehingga
-     * pemilik dompet ditanyai soal kaos kaki dan barisnya tersimpan sebagai tiga
-     * boolean yang tidak berarti apa-apa.
-     *
-     * @return list<string>
-     */
-    private static function checklistFor(int $type): array
-    {
-        return match ($type) {
-            1 => self::BAG_CHECKLIST,
-            2 => self::SHOE_CHECKLIST,
-            default => [],
-        };
-    }
 
     /**
      * Cakupan cabang dipaksakan eksplisit, tidak menumpang BranchScoped.
@@ -203,17 +177,7 @@ class OrderController extends Controller
      */
     private function checkboxFlags(OrderItem $item): array
     {
-        $panjang = count(self::checklistFor((int) $item->type));
-        $flags = $item->checkbox
-            ? array_map(fn ($nilai) => trim($nilai) === 'true', explode(',', $item->checkbox))
-            : [];
-
-        $hasil = [];
-        for ($i = 0; $i < $panjang; $i++) {
-            $hasil[] = $flags[$i] ?? false;
-        }
-
-        return $hasil;
+        return ItemChecklist::flags($item);
     }
 
     // GET /api/customer/orders/{id}
@@ -548,16 +512,7 @@ class OrderController extends Controller
 
     private function serializeCheckbox(array $itemData): string
     {
-        $size = count(self::checklistFor((int) $itemData['type']));
-
-        $flags = $itemData['checkbox'] ?? [];
-
-        $normalized = [];
-        for ($index = 0; $index < $size; $index++) {
-            $normalized[] = ! empty($flags[$index]) ? 'true' : 'false';
-        }
-
-        return implode(', ', $normalized);
+        return ItemChecklist::serialize((int) $itemData['type'], $itemData['checkbox'] ?? []);
     }
 
     // GET /api/customer/orders/{id}/invoice
@@ -645,22 +600,7 @@ class OrderController extends Controller
      */
     private function kelengkapan(OrderItem $item): array
     {
-        $labels = self::checklistFor((int) $item->type);
-
-        if (! $item->checkbox) {
-            return [];
-        }
-
-        $flags = array_map(fn ($value) => trim($value) === 'true', explode(',', $item->checkbox));
-
-        $result = [];
-        foreach ($labels as $index => $label) {
-            if ($flags[$index] ?? false) {
-                $result[] = $label;
-            }
-        }
-
-        return $result;
+        return ItemChecklist::checked($item);
     }
 
     private function timeline(Order $order, $items): array
