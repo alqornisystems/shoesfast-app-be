@@ -26,6 +26,10 @@ class Project extends Model
         'maps',
         'phone',
         'whatsapp',
+        // Rekening tujuan pembayaran, per cabang — sepasang dengan whatsapp di atas.
+        'bank_name',
+        'bank_account_number',
+        'bank_account_name',
         'email',
         'logo',
         'instagram',

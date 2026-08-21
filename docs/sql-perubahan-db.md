@@ -198,6 +198,40 @@ dibiarkan kosong selamanya.
 Yang berubah hanya ini: begitu kasir mengisi kolomnya, tebakan berhenti dan angkanya
 jadi fakta.
 
+## 9. Rekening tujuan pembayaran di `projects`
+
+Setara migrasi `2026_08_22_000002_add_bank_account_to_projects_table`. Dibutuhkan tombol
+"Bayar sekarang" di portal pelanggan.
+
+```sql
+ALTER TABLE `projects`
+  ADD COLUMN IF NOT EXISTS `bank_name`           VARCHAR(50)  NULL AFTER `whatsapp`,
+  ADD COLUMN IF NOT EXISTS `bank_account_number` VARCHAR(50)  NULL AFTER `bank_name`,
+  ADD COLUMN IF NOT EXISTS `bank_account_name`   VARCHAR(100) NULL AFTER `bank_account_number`;
+```
+
+Ditaruh di `projects`, bukan di `settings`, karena **nomor WhatsApp-nya sudah per
+cabang** (kolom `projects.whatsapp`). Rekening yang global sementara nomor WA-nya per
+cabang berarti pelanggan Surabaya diminta mentransfer ke rekening pusat lalu mengirim
+buktinya ke nomor Surabaya.
+
+Isi per cabang — **nilai di bawah contoh, ganti dengan yang sebenarnya**:
+
+```sql
+UPDATE `projects` SET
+  `bank_name`           = 'BCA',
+  `bank_account_number` = '1234567890',
+  `bank_account_name`   = 'Shoesfast'
+WHERE `id` = 1;
+```
+
+Selama salah satu dari tiga kolom itu kosong, tombol bayarnya **tidak muncul** di
+portal. Itu perilaku yang benar: lebih baik tidak ada tombol daripada mengarahkan orang
+ke nomor rekening yang salah.
+
+`projects.whatsapp` harus format internasional tanpa `+` dan tanpa `0` di depan
+(`6281334380934`) — itu yang diminta tautan `wa.me`. Data produksi sekarang sudah benar.
+
 ---
 
 ## Setelah dijalankan
@@ -211,6 +245,7 @@ SHOW COLUMNS FROM `sends` LIKE 'tracking_%';
 SHOW COLUMNS FROM `payments` LIKE 'orders_items_id';
 SHOW TABLES LIKE 'device_tokens';
 SELECT `key`, `value` FROM `settings` WHERE `key` LIKE 'app_%';
+SELECT `id`, `name`, `whatsapp`, `bank_name`, `bank_account_number` FROM `projects` WHERE `is_deleted` = 0;
 ```
 
 Lalu tandai migrasinya sudah jalan supaya `php artisan migrate` berikutnya tidak mencoba
@@ -224,9 +259,10 @@ INSERT IGNORE INTO `migrations` (`migration`, `batch`) VALUES
   ('2026_08_13_000002_create_device_tokens_table',         (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_13_000003_add_started_at_to_treatments_table',  (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_21_000001_add_tracking_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
-  ('2026_08_22_000001_add_orders_items_id_to_payments_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b));
+  ('2026_08_22_000001_add_orders_items_id_to_payments_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b)),
+  ('2026_08_22_000002_add_bank_account_to_projects_table',    (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b));
 ```
 
-Sebenarnya ketujuh migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
+Sebenarnya kedelapan migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
 menjalankan `php artisan migrate` setelah SQL ini pun tidak akan merusak apa pun — ia hanya
 akan melewati yang sudah ada.

@@ -559,9 +559,14 @@ class OrderController extends Controller
             'total_paid' => $totalPaid,
             'credit' => $credit,
             'payments' => $payments->map(fn (Payment $payment) => [
+                'id' => $payment->id,
                 'date' => $payment->date,
                 'nominal' => (int) $payment->nominal,
                 'note' => $payment->note,
+                // Bukti setor yang difoto kasir. Pelanggan berhak melihat kembali apa
+                // yang dicatat atas namanya — riwayat pembayaran tanpa buktinya cuma
+                // daftar angka yang harus dipercaya begitu saja.
+                'photo' => Base64Image::url($payment->photo),
             ])->values(),
         ]);
     }
