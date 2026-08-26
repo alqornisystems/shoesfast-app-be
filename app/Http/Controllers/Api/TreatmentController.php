@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\FcmService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class TreatmentController extends Controller
 {
@@ -19,6 +20,89 @@ class TreatmentController extends Controller
     }
 
     /**
+     * Kolom yang boleh dipakai untuk mengurutkan, beserta ekspresi SQL-nya.
+     *
+     * Daftar putih, bukan sekadar pembersih string: nilai `sort` dari request dipakai
+     * sebagai KUNCI di sini, dan yang masuk ke query selalu ekspresi yang ditulis di
+     * bawah ini. Nama layanan dan nama pelanggan lewat subquery supaya tidak perlu
+     * join yang mengacaukan hitungan paginasi.
+     */
+    private const SORTABLE = [
+        'created_at' => 'treatments.created_at',
+        'date_start' => 'treatments.date_start',
+        'date_end' => 'treatments.date_end',
+        'done_at' => 'treatments.done_at',
+        'price' => 'treatments.price',
+        'status' => 'treatments.status',
+        'service' => '(SELECT s.name FROM services s WHERE s.id = treatments.services_id)',
+        'item' => '(SELECT oi.name FROM orders_items oi WHERE oi.id = treatments.orders_items_id)',
+        'order_code' => '(SELECT o.code FROM orders o
+                          JOIN orders_items oi ON oi.orders_id = o.id
+                          WHERE oi.id = treatments.orders_items_id LIMIT 1)',
+        'technician' => '(SELECT u.name FROM users u WHERE u.id = treatments.users_id)',
+        'customer' => '(SELECT c.name FROM customers c
+                        JOIN orders o ON o.customers_id = c.id
+                        JOIN orders_items oi ON oi.orders_id = o.id
+                        WHERE oi.id = treatments.orders_items_id LIMIT 1)',
+    ];
+
+    /**
+     * Ringkasan antrean per jenis layanan, untuk dashboard teknisi.
+     *
+     * Pertanyaan yang dijawab: "treatment apa saja yang ada, berapa banyak tiap
+     * jenisnya, dan mana yang harus dikerjakan duluan". Hitungannya menyapu SELURUH
+     * antrean, bukan satu halaman paginasi — itulah alasan ringkasan ini dihitung di
+     * SQL dan bukan dari daftar yang sudah dipotong 15 baris.
+     *
+     * Urutannya sengaja: yang paling banyak terlambat naik ke atas, baru jumlah
+     * menunggu. Kartu teratas selalu pekerjaan yang paling mendesak.
+     */
+    public function summaryByService(Request $request)
+    {
+        $ambangTerlambat = time() - (14 * 24 * 60 * 60);
+
+        $baris = Treatment::query()
+            ->whereNull('done_at')
+            ->whereHas('orderItem.order', function ($q) {
+                $q->whereNotIn('status', [2, 3]); // bukan selesai, bukan batal
+            })
+            // Tanpa join ke `services`: scope `notDeleted` model ini menambahkan
+            // `where is_deleted = 0` tanpa nama tabel, dan `services` punya kolom
+            // bernama sama — join membuatnya ambigu dan query gagal. Nama layanan
+            // diambil lewat subquery.
+            ->groupBy('treatments.services_id')
+            ->select([
+                'treatments.services_id',
+                DB::raw('(SELECT s.name FROM services s WHERE s.id = treatments.services_id) as services_name'),
+                DB::raw('(SELECT s.estimation FROM services s WHERE s.id = treatments.services_id) as services_estimation'),
+                DB::raw('COUNT(*) as total'),
+                DB::raw('SUM(CASE WHEN treatments.users_id IS NULL AND treatments.partnerships_id IS NULL THEN 1 ELSE 0 END) as menunggu'),
+                DB::raw('SUM(CASE WHEN treatments.users_id IS NOT NULL OR treatments.partnerships_id IS NOT NULL THEN 1 ELSE 0 END) as dikerjakan'),
+                DB::raw("SUM(CASE WHEN treatments.users_id IS NULL AND treatments.partnerships_id IS NULL AND treatments.created_at < {$ambangTerlambat} THEN 1 ELSE 0 END) as terlambat"),
+                DB::raw('MIN(treatments.created_at) as antrean_terlama'),
+            ])
+            ->orderByDesc('terlambat')
+            ->orderByDesc('menunggu')
+            ->orderBy('services_name')
+            ->get();
+
+        return response()->json([
+            'data' => $baris->map(fn ($row) => [
+                'services_id' => (int) $row->services_id,
+                'services_name' => $row->services_name,
+                'services_estimation' => (int) $row->services_estimation,
+                'total' => (int) $row->total,
+                'menunggu' => (int) $row->menunggu,
+                'dikerjakan' => (int) $row->dikerjakan,
+                'terlambat' => (int) $row->terlambat,
+                // Kapan barang paling lama di antrean jenis ini mulai menunggu. null
+                // kalau jenis ini tidak punya antrean yang belum ditugaskan.
+                'antrean_terlama' => $row->antrean_terlama ? (int) $row->antrean_terlama : null,
+            ]),
+        ]);
+    }
+
+    /**
      * Display a listing of treatments (waiting list)
      */
     public function index(Request $request)
@@ -27,6 +111,9 @@ class TreatmentController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'search' => ['nullable', 'string', 'max:100'],
             'users_id' => ['nullable', 'integer'],
+            'services_id' => ['nullable', 'integer'],
+            'sort' => ['nullable', 'string', Rule::in(array_keys(self::SORTABLE))],
+            'order' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
         ]);
 
         $query = Treatment::with([
@@ -114,6 +201,12 @@ class TreatmentController extends Controller
                     })
                     ->orWhereHas('orderItem.order', function ($qOrder) use ($search) {
                         $qOrder->where('code', 'LIKE', "%{$search}%");
+                    })
+                    // Nama layanan ikut dicari: "cuci sepatu" di kotak pencarian sebelumnya
+                    // tidak menemukan apa pun, padahal itu pertanyaan paling wajar di
+                    // halaman antrean pengerjaan.
+                    ->orWhereHas('service', function ($qService) use ($search) {
+                        $qService->where('name', 'LIKE', "%{$search}%");
                     });
             });
         }
@@ -129,6 +222,24 @@ class TreatmentController extends Controller
         // berarti pekerjaan orang lain bisa dibaca hanya dengan menebak sebuah id.
         if ($this->isAdmin($request) && $request->filled('users_id')) {
             $query->where('users_id', $request->input('users_id'));
+        }
+
+        // Saringan per jenis layanan, untuk admin yang ingin membereskan satu jenis
+        // pekerjaan sekaligus: pilih layanannya, centang semua, tugaskan.
+        if ($request->filled('services_id')) {
+            $query->where('services_id', $request->input('services_id'));
+        }
+
+        // Pengurutan pilihan pengguna MENGGANTI urutan bawaan tiap halaman, bukan
+        // menumpuknya — reorder() membuang orderBy yang dipasang blok page_type di atas.
+        // Kolomnya diambil dari daftar putih SORTABLE, jadi tidak ada string dari
+        // request yang pernah masuk ke SQL.
+        if ($request->filled('sort')) {
+            $arah = strtolower($request->input('order', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+            $query->reorder()
+                ->orderBy(DB::raw(self::SORTABLE[$request->input('sort')]), $arah)
+                ->orderBy('treatments.id', $arah);
         }
 
         $perPage = $request->input('per_page', 15);

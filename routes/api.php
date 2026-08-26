@@ -227,6 +227,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('treatments/{id}/start', [TreatmentController::class, 'start']);
         Route::put('treatments/{id}/update', [TreatmentController::class, 'update']);
         Route::get('treatments/available-technicians', [TreatmentController::class, 'getAvailableTechnicians']);
+        // Ringkasan antrean per jenis layanan — dashboard teknisi. Terbuka untuk staf
+        // lapangan: isinya jumlah pekerjaan per jenis, bukan data pelanggan.
+        Route::get('treatments/summary-by-service', [TreatmentController::class, 'summaryByService']);
 
         // Sends (Delivery & Pickup) - custom routes before apiResource
         Route::get('sends/pickup-waiting-list', [SendController::class, 'pickupWaitingList']);
