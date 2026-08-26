@@ -129,6 +129,10 @@ trait CreatesCustomerSchema
             $t->increments('id');
             $t->integer('projects_id')->default(1);
             $t->string('name')->nullable();
+            // Dibaca PartnershipController@index saat menyusun barisnya.
+            $t->string('phone')->nullable();
+            $t->text('address')->nullable();
+            $t->string('account_number')->nullable();
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();

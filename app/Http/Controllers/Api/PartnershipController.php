@@ -54,12 +54,16 @@ class PartnershipController extends Controller
                     'created_at' => $partnership->created_at,
                 ];
             }),
-            'pagination' => [
-                'current_page' => $page,
-                'per_page' => $perPage,
-                'total' => $total,
-                'last_page' => ceil($total / $perPage),
-            ],
+            // Bentuknya sengaja sama persis dengan paginator Laravel yang dipakai
+            // dua puluh endpoint daftar lain — datar, bukan dibungkus 'pagination'.
+            // Satu bentuk untuk semua daftar berarti halaman baru tidak perlu
+            // memeriksa dulu endpointnya termasuk yang mana.
+            'current_page' => (int) $page,
+            'last_page' => max(1, (int) ceil($total / $perPage)),
+            'per_page' => (int) $perPage,
+            'total' => (int) $total,
+            'from' => $total === 0 ? null : (($page - 1) * $perPage) + 1,
+            'to' => $total === 0 ? null : (($page - 1) * $perPage) + count($partnerships),
         ]);
     }
 
