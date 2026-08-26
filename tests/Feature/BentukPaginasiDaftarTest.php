@@ -84,6 +84,22 @@ class BentukPaginasiDaftarTest extends TestCase
         $this->assertSame('Cabang Surabaya', $body['data'][0]['branch_name']);
     }
 
+    public function test_antrean_jemput_dan_antar_ikut_dipaginasi(): void
+    {
+        foreach (['/api/sends/pickup-waiting-list', '/api/sends/delivery-waiting-list'] as $jalur) {
+            $this->getJson($jalur)
+                ->assertStatus(200)
+                ->assertJsonStructure(array_merge(['data'], self::MEDAN_PAGINATOR));
+        }
+    }
+
+    public function test_antrean_jemput_menolak_kolom_urut_di_luar_daftar_putih(): void
+    {
+        $this->getJson('/api/sends/pickup-waiting-list?sort=orders.id;DROP')->assertStatus(422);
+        $this->getJson('/api/sends/pickup-waiting-list?sort=date&order=miring')->assertStatus(422);
+        $this->getJson('/api/sends/pickup-waiting-list?sort=date&order=desc')->assertStatus(200);
+    }
+
     public function test_daftar_kosong_memberi_from_dan_to_null(): void
     {
         $body = $this->getJson('/api/partnerships')->assertStatus(200)->json();

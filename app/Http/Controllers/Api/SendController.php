@@ -21,6 +21,27 @@ use Illuminate\Support\Facades\Storage;
 
 class SendController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan antrean penjemputan. */
+    private const SORTIR_JEMPUT = [
+        'date' => 'orders.date',
+        'order_code' => 'orders.code',
+        'total' => 'orders.total_price',
+        'customer' => '(SELECT c.name FROM customers c WHERE c.id = orders.customers_id)',
+    ];
+
+    /** Kolom yang boleh dipakai mengurutkan antrean pengantaran. */
+    private const SORTIR_ANTAR = [
+        'created_at' => 'orders_items.created_at',
+        'item' => 'orders_items.name',
+        'price' => 'orders_items.price',
+        'order_code' => '(SELECT o.code FROM orders o WHERE o.id = orders_items.orders_id)',
+        'customer' => '(SELECT c.name FROM customers c
+                        JOIN orders o ON o.customers_id = c.id
+                        WHERE o.id = orders_items.orders_id LIMIT 1)',
+    ];
+
     /**
      * Daftar tertutup alasan kegagalan. Kalau kurir boleh mengarang alasannya, pertanyaan
      * "kenapa pengantaran gagal" tidak akan pernah bisa dijawab dengan angka.
@@ -415,15 +436,36 @@ class SendController extends Controller
      */
     public function pickupWaitingList(Request $request)
     {
-        $orders = Order::with(['customer', 'project'])
+        $request->validate(array_merge([
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ], $this->aturanSortir(self::SORTIR_JEMPUT)));
+
+        $query = Order::with(['customer', 'project'])
             ->where('status', 0) // Pending orders only
             ->whereDoesntHave('sends', function ($q) {
                 $q->where('type', 0); // No pickup created yet
             })
-            ->orderBy('date', 'DESC')
-            ->get();
+            ->orderBy('date', 'DESC');
 
-        $orders->transform(function ($order) {
+        // Pencarian pindah ke server bersama paginasinya: menyaring di klien hanya
+        // menyentuh baris yang kebetulan ada di halaman aktif.
+        if ($request->filled('search')) {
+            $cari = $request->input('search');
+            $query->where(function ($q) use ($cari) {
+                $q->where('code', 'LIKE', "%{$cari}%")
+                    ->orWhereHas('customer', function ($qc) use ($cari) {
+                        $qc->where('name', 'LIKE', "%{$cari}%")
+                            ->orWhere('phone', 'LIKE', "%{$cari}%");
+                    });
+            });
+        }
+
+        $this->terapkanSortir($query, $request, self::SORTIR_JEMPUT, 'orders.id');
+
+        $orders = $query->paginate($request->input('per_page', 15));
+
+        $orders->getCollection()->transform(function ($order) {
             return [
                 'id' => $order->id,
                 'code' => $order->code,
@@ -438,9 +480,7 @@ class SendController extends Controller
             ];
         });
 
-        return response()->json([
-            'data' => $orders,
-        ]);
+        return response()->json($orders);
     }
 
     /**
@@ -477,15 +517,37 @@ class SendController extends Controller
      */
     public function deliveryWaitingList(Request $request)
     {
-        $items = OrderItem::with(['order.customer', 'order.project'])
+        $request->validate(array_merge([
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ], $this->aturanSortir(self::SORTIR_ANTAR)));
+
+        $query = OrderItem::with(['order.customer', 'order.project'])
             ->where('status', 2) // Completed items only
             ->whereDoesntHave('sends', function ($q) {
                 $q->where('type', 1); // No delivery created yet
             })
-            ->orderBy('id', 'DESC')
-            ->get();
+            ->orderBy('id', 'DESC');
 
-        $items->transform(function ($item) {
+        if ($request->filled('search')) {
+            $cari = $request->input('search');
+            $query->where(function ($q) use ($cari) {
+                $q->where('name', 'LIKE', "%{$cari}%")
+                    ->orWhereHas('order', function ($qo) use ($cari) {
+                        $qo->where('code', 'LIKE', "%{$cari}%");
+                    })
+                    ->orWhereHas('order.customer', function ($qc) use ($cari) {
+                        $qc->where('name', 'LIKE', "%{$cari}%")
+                            ->orWhere('phone', 'LIKE', "%{$cari}%");
+                    });
+            });
+        }
+
+        $this->terapkanSortir($query, $request, self::SORTIR_ANTAR, 'orders_items.id');
+
+        $items = $query->paginate($request->input('per_page', 15));
+
+        $items->getCollection()->transform(function ($item) {
             // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati
             // diganti ke domain sekarang.
             $photoUrl = \App\Support\Base64Image::url($item->photo);
@@ -507,9 +569,7 @@ class SendController extends Controller
             ];
         });
 
-        return response()->json([
-            'data' => $items,
-        ]);
+        return response()->json($items);
     }
 
     /**
