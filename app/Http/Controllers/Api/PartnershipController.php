@@ -58,7 +58,7 @@ class PartnershipController extends Controller
                 'current_page' => $page,
                 'per_page' => $perPage,
                 'total' => $total,
-                'total_pages' => ceil($total / $perPage),
+                'last_page' => ceil($total / $perPage),
             ],
         ]);
     }

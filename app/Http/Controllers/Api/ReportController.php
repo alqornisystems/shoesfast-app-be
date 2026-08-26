@@ -222,7 +222,7 @@ class ReportController extends Controller
                         'current_page' => $page,
                         'per_page' => $perPage,
                         'total' => $totalOrders,
-                        'total_pages' => $totalPages,
+                        'last_page' => $totalPages,
                     ],
                 ];
             },
@@ -355,7 +355,7 @@ class ReportController extends Controller
                         'current_page' => $page,
                         'per_page' => $perPage,
                         'total' => $totalPayments,
-                        'total_pages' => $totalPages,
+                        'last_page' => $totalPages,
                     ],
                 ];
             },
@@ -516,7 +516,7 @@ class ReportController extends Controller
                         'current_page' => $page,
                         'per_page' => $perPage,
                         'total' => $totalItems,
-                        'total_pages' => $totalPages,
+                        'last_page' => $totalPages,
                     ],
                 ];
             },
@@ -1936,7 +1936,7 @@ class ReportController extends Controller
                         'current_page' => $page,
                         'per_page' => $perPage,
                         'total' => $totalNotes,
-                        'total_pages' => (int) ceil($totalNotes / $perPage),
+                        'last_page' => (int) ceil($totalNotes / $perPage),
                     ],
                 ];
             },
