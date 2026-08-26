@@ -9,6 +9,15 @@ use Illuminate\Support\Facades\Validator;
 
 class CustomerController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_PELANGGAN = [
+        'name' => 'customers.name',
+        'phone' => 'customers.phone',
+        'created_at' => 'customers.created_at',
+    ];
+
     /**
      * Display a listing of the resource.
      */
@@ -49,6 +58,9 @@ class CustomerController extends Controller
                     });
             });
         }
+
+        $request->validate($this->aturanSortir(self::SORTIR_PELANGGAN));
+        $this->terapkanSortir($query, $request, self::SORTIR_PELANGGAN, 'customers.id');
 
         $customers = $query->orderBy('created_at', 'desc')
             ->paginate($perPage);

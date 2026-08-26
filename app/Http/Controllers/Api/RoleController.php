@@ -10,12 +10,25 @@ use Illuminate\Validation\Rule;
 
 class RoleController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar jabatan. */
+    private const SORTIR_JABATAN = [
+        'name' => 'roles.name',
+        'created_at' => 'roles.created_at',
+    ];
+
     // GET /api/roles
     public function index(Request $request): JsonResponse
     {
         $perPage = $request->get('per_page', 25);
 
-        $roles = Role::orderBy('name')->paginate($perPage);
+        $request->validate($this->aturanSortir(self::SORTIR_JABATAN));
+
+        $query = Role::orderBy('name');
+        $this->terapkanSortir($query, $request, self::SORTIR_JABATAN, 'roles.id');
+
+        $roles = $query->paginate($perPage);
 
         return response()->json($roles);
     }

@@ -12,6 +12,14 @@ use Illuminate\Http\Request;
 
 class GuaranteeClaimController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_GARANSI = [
+        'date' => 'guarantees.date',
+        'status' => 'guarantees.status',
+    ];
+
     private const STATUS_LABELS = [
         0 => 'Menunggu ditinjau',
         1 => 'Disetujui',
@@ -30,6 +38,9 @@ class GuaranteeClaimController extends Controller
         if ($status !== null && $status !== '') {
             $query->where('status', (int) $status);
         }
+
+        $request->validate($this->aturanSortir(self::SORTIR_GARANSI));
+        $this->terapkanSortir($query, $request, self::SORTIR_GARANSI, 'guarantees.id');
 
         $paginator = $query->paginate($perPage);
 

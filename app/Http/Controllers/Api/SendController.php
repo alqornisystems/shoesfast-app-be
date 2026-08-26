@@ -23,6 +23,17 @@ class SendController extends Controller
 {
     use \App\Http\Controllers\Concerns\DaftarTersortir;
 
+    /** Kolom yang boleh dipakai mengurutkan daftar pengiriman. */
+    private const SORTIR_KIRIM = [
+        'date' => 'sends.date',
+        'status' => 'sends.status',
+        'courier' => '(SELECT u.name FROM users u WHERE u.id = sends.users_id)',
+        'customer' => '(SELECT c.name FROM customers c
+                    JOIN orders o ON o.customers_id = c.id
+                    WHERE o.id = sends.orders_id LIMIT 1)',
+        'order_code' => '(SELECT o.code FROM orders o WHERE o.id = sends.orders_id)',
+    ];
+
     /** Kolom yang boleh dipakai mengurutkan antrean penjemputan. */
     private const SORTIR_JEMPUT = [
         'date' => 'orders.date',
@@ -63,6 +74,8 @@ class SendController extends Controller
      */
     public function index(Request $request)
     {
+        $request->validate($this->aturanSortir(self::SORTIR_KIRIM));
+
         $query = Send::with([
             'user' => function ($query) {
                 $query->withoutGlobalScopes(); // Load user without branch/deleted scope
@@ -106,6 +119,8 @@ class SendController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
+        $this->terapkanSortir($query, $request, self::SORTIR_KIRIM, 'sends.id');
+
         $sends = $query->paginate($perPage);
 
         // Transform data
@@ -618,6 +633,7 @@ class SendController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'search' => ['nullable', 'string', 'max:100'],
         ]);
+        $request->validate($this->aturanSortir(self::SORTIR_KIRIM));
 
         $query = Send::with([
             'user' => function ($query) {
@@ -662,6 +678,8 @@ class SendController extends Controller
 
         // Paginator, bentuk yang sama persis dengan GET /treatments — satu pola untuk
         // seluruh daftar, bukan dua yang harus diingat mana dipakai di mana.
+        $this->terapkanSortir($query, $request, self::SORTIR_KIRIM, 'sends.id');
+
         $sends = $query->paginate($request->input('per_page', 15));
         $statusBayar = $this->statusPembayaranPerOrder($sends->getCollection());
 
@@ -717,6 +735,7 @@ class SendController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'search' => ['nullable', 'string', 'max:100'],
         ]);
+        $request->validate($this->aturanSortir(self::SORTIR_KIRIM));
 
         $query = Send::with([
             'user' => function ($query) {
@@ -772,6 +791,8 @@ class SendController extends Controller
 
         // Paginator, bentuk yang sama persis dengan GET /treatments — satu pola untuk
         // seluruh daftar, bukan dua yang harus diingat mana dipakai di mana.
+        $this->terapkanSortir($query, $request, self::SORTIR_KIRIM, 'sends.id');
+
         $sends = $query->paginate($request->input('per_page', 15));
         $statusBayar = $this->statusPembayaranPerOrder($sends->getCollection());
 

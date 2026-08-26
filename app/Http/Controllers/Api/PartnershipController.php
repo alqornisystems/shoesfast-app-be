@@ -9,6 +9,15 @@ use Illuminate\Http\Request;
 
 class PartnershipController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_MITRA = [
+        'name' => 'partnerships.name',
+        'phone' => 'partnerships.phone',
+        'created_at' => 'partnerships.created_at',
+    ];
+
     /**
      * GET /api/partnerships
      * Get all partnerships with pagination
@@ -34,6 +43,9 @@ class PartnershipController extends Controller
                     ->orWhere('address', 'like', "%{$search}%");
             });
         }
+
+        $request->validate($this->aturanSortir(self::SORTIR_MITRA));
+        $this->terapkanSortir($query, $request, self::SORTIR_MITRA, 'partnerships.id');
 
         $total = $query->count();
         $partnerships = $query

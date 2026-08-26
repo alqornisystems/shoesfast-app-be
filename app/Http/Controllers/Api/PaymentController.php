@@ -13,6 +13,16 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_PEMBAYARAN = [
+        'date' => 'orders.date',
+        'order_code' => 'orders.code',
+        'total' => 'orders.total_price',
+        'customer' => '(SELECT c.name FROM customers c WHERE c.id = orders.customers_id)',
+    ];
+
     /**
      * Display a listing of payments (orders with payment info)
      */
@@ -73,6 +83,9 @@ class PaymentController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
+        $request->validate($this->aturanSortir(self::SORTIR_PEMBAYARAN));
+        $this->terapkanSortir($query, $request, self::SORTIR_PEMBAYARAN, 'orders.id');
+
         $orders = $query->paginate($perPage);
 
         // Transform data with payment info

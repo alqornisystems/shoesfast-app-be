@@ -9,6 +9,15 @@ use Illuminate\Support\Facades\Validator;
 
 class ServiceController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_LAYANAN = [
+        'name' => 'services.name',
+        'price' => 'services.price',
+        'estimation' => 'services.estimation',
+    ];
+
     /**
      * Display a listing of services
      */
@@ -27,6 +36,9 @@ class ServiceController extends Controller
 
         // Pagination
         $perPage = $request->get('per_page', 25);
+        $request->validate($this->aturanSortir(self::SORTIR_LAYANAN));
+        $this->terapkanSortir($query, $request, self::SORTIR_LAYANAN, 'services.id');
+
         $services = $query->orderBy('id', 'desc')->paginate($perPage);
 
         // Teknisi dan kurir membaca daftar ini untuk memilih pengerjaan saat mencatat barang

@@ -10,6 +10,16 @@ use Illuminate\Http\Request;
 
 class RedemptionController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_PENUKARAN = [
+        'date' => 'reward_redemptions.date',
+        'points_spent' => 'reward_redemptions.points_spent',
+        'status' => 'reward_redemptions.status',
+        'code' => 'reward_redemptions.code',
+    ];
+
     // GET /api/redemptions
     public function index(Request $request): JsonResponse
     {
@@ -32,6 +42,9 @@ class RedemptionController extends Controller
         if ($status !== null && $status !== '') {
             $query->where('status', (int) $status);
         }
+
+        $request->validate($this->aturanSortir(self::SORTIR_PENUKARAN));
+        $this->terapkanSortir($query, $request, self::SORTIR_PENUKARAN, 'reward_redemptions.id');
 
         $paginator = $query->paginate($perPage);
 

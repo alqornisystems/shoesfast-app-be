@@ -9,6 +9,15 @@ use Illuminate\Http\Request;
 
 class RewardController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_HADIAH = [
+        'name' => 'rewards.name',
+        'points_cost' => 'rewards.points_cost',
+        'created_at' => 'rewards.created_at',
+    ];
+
     private const TYPE_LABELS = [0 => 'Layanan', 1 => 'Barang'];
 
     // GET /api/rewards
@@ -22,6 +31,9 @@ class RewardController extends Controller
         if ($search !== '') {
             $query->where('name', 'like', "%{$search}%");
         }
+
+        $request->validate($this->aturanSortir(self::SORTIR_HADIAH));
+        $this->terapkanSortir($query, $request, self::SORTIR_HADIAH, 'rewards.id');
 
         $paginator = $query->paginate($perPage);
 

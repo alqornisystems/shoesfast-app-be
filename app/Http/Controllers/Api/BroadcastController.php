@@ -14,6 +14,21 @@ use Illuminate\Support\Facades\Auth;
 
 class BroadcastController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar template. */
+    private const SORTIR_TEMPLATE = [
+        'name' => 'broadcast_templates.name',
+        'created_at' => 'broadcast_templates.created_at',
+    ];
+
+    /** Kolom yang boleh dipakai mengurutkan riwayat broadcast. */
+    private const SORTIR_RIWAYAT = [
+        'date' => 'broadcast_sends.date',
+        'status' => 'broadcast_sends.status',
+        'created_at' => 'broadcast_sends.created_at',
+    ];
+
     protected WhatsAppService $whatsapp;
 
     public function __construct(WhatsAppService $whatsapp)
@@ -45,6 +60,9 @@ class BroadcastController extends Controller
         $perPage = $request->input('per_page', 20);
 
         $total = $query->count();
+        $request->validate($this->aturanSortir(self::SORTIR_TEMPLATE));
+        $this->terapkanSortir($query, $request, self::SORTIR_TEMPLATE, 'broadcast_templates.id');
+
         $templates = $query
             ->orderBy('created_at', 'desc')
             ->offset(($page - 1) * $perPage)
@@ -203,6 +221,9 @@ class BroadcastController extends Controller
         $perPage = $request->input('per_page', 20);
 
         $total = $query->count();
+        $request->validate($this->aturanSortir(self::SORTIR_RIWAYAT));
+        $this->terapkanSortir($query, $request, self::SORTIR_RIWAYAT, 'broadcast_sends.id');
+
         $broadcasts = $query
             ->orderBy('created_at', 'desc')
             ->offset(($page - 1) * $perPage)

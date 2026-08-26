@@ -11,6 +11,16 @@ use Illuminate\Support\Facades\Storage;
 
 class ExpenseController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_PENGELUARAN = [
+        'date' => 'expenses.date',
+        'nominal' => 'expenses.nominal',
+        'category' => 'expenses.category',
+        'note' => 'expenses.note',
+    ];
+
     public function index(Request $request)
     {
         $query = Expense::with('project')->orderBy('date', 'DESC');
@@ -24,6 +34,9 @@ class ExpenseController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
+
+        $request->validate($this->aturanSortir(self::SORTIR_PENGELUARAN));
+        $this->terapkanSortir($query, $request, self::SORTIR_PENGELUARAN, 'expenses.id');
 
         return response()->json($query->paginate($perPage));
     }

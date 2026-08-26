@@ -10,6 +10,15 @@ use Illuminate\Support\Facades\DB;
 
 class ExpenseOperationalController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_OPERASIONAL = [
+        'name' => 'expense_operationals.name',
+        'nominal' => 'expense_operationals.nominal',
+        'note' => 'expense_operationals.note',
+    ];
+
     public function index(Request $request)
     {
         $query = ExpenseOperational::with('project')->orderBy('id', 'DESC');
@@ -22,6 +31,9 @@ class ExpenseOperationalController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
+
+        $request->validate($this->aturanSortir(self::SORTIR_OPERASIONAL));
+        $this->terapkanSortir($query, $request, self::SORTIR_OPERASIONAL, 'expense_operationals.id');
 
         return response()->json($query->paginate($perPage));
     }

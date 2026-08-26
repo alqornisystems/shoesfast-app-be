@@ -17,6 +17,17 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar ini. */
+    private const SORTIR_PESANAN = [
+        'date' => 'orders.date',
+        'order_code' => 'orders.code',
+        'total' => 'orders.total_price',
+        'status' => 'orders.status',
+        'customer' => '(SELECT c.name FROM customers c WHERE c.id = orders.customers_id)',
+    ];
+
     protected WhatsAppService $whatsapp;
 
     public function __construct(WhatsAppService $whatsapp)
@@ -61,6 +72,9 @@ class OrderController extends Controller
         }
 
         $perPage = $request->get('per_page', 15);
+        $request->validate($this->aturanSortir(self::SORTIR_PESANAN));
+        $this->terapkanSortir($query, $request, self::SORTIR_PESANAN, 'orders.id');
+
         $orders = $query->paginate($perPage);
 
         // Transform data

@@ -13,6 +13,16 @@ use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
+    use \App\Http\Controllers\Concerns\DaftarTersortir;
+
+    /** Kolom yang boleh dipakai mengurutkan daftar karyawan. */
+    private const SORTIR_KARYAWAN = [
+        'name' => 'users.name',
+        'phone' => 'users.phone',
+        'role' => '(SELECT r.name FROM roles r WHERE r.id = users.roles_id)',
+        'branch' => '(SELECT p.name FROM projects p WHERE p.id = users.projects_id)',
+    ];
+
     /**
      * Normalize phone number: remove leading 0 or 62
      */
@@ -38,9 +48,12 @@ class UserController extends Controller
     {
         $perPage = $request->get('per_page', 25);
 
-        $users = User::with(['role', 'project'])
-            ->orderBy('name')
-            ->paginate($perPage);
+        $request->validate($this->aturanSortir(self::SORTIR_KARYAWAN));
+
+        $query = User::with(['role', 'project'])->orderBy('name');
+        $this->terapkanSortir($query, $request, self::SORTIR_KARYAWAN, 'users.id');
+
+        $users = $query->paginate($perPage);
 
         $users->getCollection()->transform(function ($user) {
             return [
