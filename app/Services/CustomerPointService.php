@@ -84,4 +84,76 @@ class CustomerPointService
             return $points;
         });
     }
+
+    /**
+     * Kebalikan awardIfSettled: dipanggil setelah satu pembayaran dihapus.
+     *
+     * Pesanan yang tadinya lunas jadi kurang bayar lagi, jadi poin yang diberikan
+     * karena kelunasan itu ikut ditarik dan `points_awarded` dibuka kembali — kalau
+     * tidak, pelunasan berikutnya tidak akan memberi poin apa pun karena penandanya
+     * masih menyala.
+     *
+     * ponytail: jumlah poin dihitung ulang dari `total_price` dan setelan
+     * `points_rupiah_per_point` yang berlaku SEKARANG, bukan dibaca dari catatan
+     * pemberiannya — tidak ada tabel riwayat poin. Kalau setelannya diubah atau
+     * keanggotaan pelanggan berubah di antara pemberian dan penarikan, angka yang
+     * ditarik meleset dari yang diberikan. Pengurangan ditahan di 0 supaya tidak
+     * pernah minus. Kalau selisih ini mulai terjadi, simpan poin yang diberikan
+     * per pesanan (kolom di `orders`) atau buat tabel riwayat poin.
+     *
+     * @return int poin yang baru saja ditarik; 0 bila tidak ada yang perlu ditarik
+     */
+    public function revokeIfUnsettled(int $ordersId): int
+    {
+        return DB::transaction(function () use ($ordersId) {
+            $order = Order::withoutGlobalScope('branch')
+                ->where('id', $ordersId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $order || (int) $order->points_awarded !== 1) {
+                return 0;
+            }
+
+            $totalPaid = (int) Payment::withoutGlobalScope('branch')
+                ->where('orders_id', $order->id)
+                ->sum('nominal');
+
+            // Masih lunas — penghapusan tadi cuma satu dari beberapa cicilan yang
+            // menutupi tagihan. Tidak ada yang perlu ditarik.
+            if ($totalPaid >= (int) $order->total_price) {
+                return 0;
+            }
+
+            $customer = Customer::withoutGlobalScope('branch')
+                ->where('id', $order->customers_id)
+                ->lockForUpdate()
+                ->first();
+
+            // Cermin dari awardIfSettled: bukan member tidak pernah menerima poin,
+            // jadi tidak ada yang ditarik — penandanya saja yang dibuka kembali.
+            if (! $customer || (int) $customer->is_member !== 1) {
+                $order->update(['points_awarded' => 0]);
+
+                return 0;
+            }
+
+            $points = intdiv((int) $order->total_price, $this->rupiahPerPoint());
+
+            if ($points < 1) {
+                $order->update(['points_awarded' => 0]);
+
+                return 0;
+            }
+
+            // Poinnya mungkin sudah sebagian ditukar hadiah. Saldo tidak boleh minus:
+            // yang ditarik paling banyak sebesar saldo yang tersisa.
+            $ditarik = min($points, (int) $customer->points);
+
+            $customer->update(['points' => (int) $customer->points - $ditarik]);
+            $order->update(['points_awarded' => 0]);
+
+            return $ditarik;
+        });
+    }
 }

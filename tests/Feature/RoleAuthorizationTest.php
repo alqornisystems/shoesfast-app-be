@@ -59,6 +59,9 @@ class RoleAuthorizationTest extends TestCase
             'tulis cabang' => ['post', '/api/projects', ['Admin Super', 'Admin']],
 
             'pembayaran' => ['get', '/api/payments', ['Admin Super', 'Admin', 'Finance']],
+            // Finance boleh mencatat pembayaran, tapi membatalkan yang sudah tercatat tidak:
+            // penghapusan menaikkan kembali piutang dan menarik poin member.
+            'hapus pembayaran' => ['delete', '/api/payments/1', ['Admin Super', 'Admin']],
             'pengeluaran' => ['get', '/api/expenses', ['Admin Super', 'Admin', 'Finance']],
             'laporan laba rugi' => ['get', '/api/reports/profit-loss', ['Admin Super', 'Admin', 'Finance']],
 

@@ -160,6 +160,73 @@ class MembershipPointTest extends TestCase
         $this->assertSame(34, app(CustomerPointService::class)->awardIfSettled($order->id));
     }
 
+    public function test_revoke_takes_back_points_when_order_falls_short_again(): void
+    {
+        $customer = $this->customer(['is_member' => 1]);
+        $order = $this->order($customer, 100000);
+        $this->pay($order, 100000);
+
+        $this->assertSame(4, app(CustomerPointService::class)->awardIfSettled($order->id));
+
+        // Pembayarannya dihapus (soft delete) — pesanan kurang bayar lagi.
+        Payment::withoutGlobalScope('branch')->where('orders_id', $order->id)->update(['is_deleted' => 1]);
+
+        $this->assertSame(4, app(CustomerPointService::class)->revokeIfUnsettled($order->id));
+
+        $fresh = Customer::withoutGlobalScope('branch')->find($customer->id);
+        $this->assertSame(0, (int) $fresh->points);
+
+        // Penandanya dibuka kembali, jadi pelunasan berikutnya memberi poin lagi.
+        $this->pay($order, 100000);
+        $this->assertSame(4, app(CustomerPointService::class)->awardIfSettled($order->id));
+    }
+
+    public function test_revoke_leaves_points_alone_while_order_is_still_settled(): void
+    {
+        $customer = $this->customer(['is_member' => 1]);
+        $order = $this->order($customer, 100000);
+        $this->pay($order, 60000);
+        $this->pay($order, 40000);
+
+        $this->assertSame(4, app(CustomerPointService::class)->awardIfSettled($order->id));
+
+        // Tidak ada cicilan yang dihapus — tagihannya masih tertutup penuh. Penarikan
+        // harus diam: menghapus satu dari beberapa cicilan yang tetap menutupi tagihan
+        // tidak boleh mengurangi poin siapa pun.
+        $this->assertSame(0, app(CustomerPointService::class)->revokeIfUnsettled($order->id));
+        $this->assertSame(4, (int) Customer::withoutGlobalScope('branch')->find($customer->id)->points);
+    }
+
+    public function test_revoke_never_pushes_the_balance_below_zero(): void
+    {
+        $customer = $this->customer(['is_member' => 1]);
+        $order = $this->order($customer, 100000);
+        $this->pay($order, 100000);
+
+        app(CustomerPointService::class)->awardIfSettled($order->id);
+
+        // Poinnya sudah ditukar hadiah sebelum pembayarannya dihapus.
+        Customer::withoutGlobalScope('branch')->where('id', $customer->id)->update(['points' => 1]);
+        Payment::withoutGlobalScope('branch')->where('orders_id', $order->id)->update(['is_deleted' => 1]);
+
+        $this->assertSame(1, app(CustomerPointService::class)->revokeIfUnsettled($order->id));
+        $this->assertSame(0, (int) Customer::withoutGlobalScope('branch')->find($customer->id)->points);
+    }
+
+    public function test_revoke_on_non_member_only_reopens_the_flag(): void
+    {
+        $customer = $this->customer(['is_member' => 0, 'points' => 7]);
+        $order = $this->order($customer, 100000);
+        $this->pay($order, 100000);
+
+        app(CustomerPointService::class)->awardIfSettled($order->id);
+        Payment::withoutGlobalScope('branch')->where('orders_id', $order->id)->update(['is_deleted' => 1]);
+
+        $this->assertSame(0, app(CustomerPointService::class)->revokeIfUnsettled($order->id));
+        $this->assertSame(7, (int) Customer::withoutGlobalScope('branch')->find($customer->id)->points);
+        $this->assertSame(0, (int) Order::withoutGlobalScope('branch')->find($order->id)->points_awarded);
+    }
+
     public function test_membership_endpoint_reports_balance_and_rate(): void
     {
         $customer = $this->customer(['is_member' => 1, 'points' => 42, 'member_code' => 'MBR000001']);

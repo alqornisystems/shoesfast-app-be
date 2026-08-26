@@ -238,7 +238,7 @@ class PaymentController extends Controller
      */
     public function getByOrder($orderId)
     {
-        $payments = Payment::with(['order.customer'])
+        $payments = Payment::with(['order.customer', 'user:id,name'])
             ->where('orders_id', $orderId)
             ->orderBy('date', 'DESC')
             ->get();
@@ -265,6 +265,11 @@ class PaymentController extends Controller
             ]);
 
             DB::commit();
+
+            // Cermin dari store(): kalau penghapusan ini membuat pesanan kurang bayar
+            // lagi, poin yang diberikan karena kelunasannya ditarik dan penandanya
+            // dibuka supaya pelunasan berikutnya memberi poin lagi.
+            app(CustomerPointService::class)->revokeIfUnsettled((int) $payment->orders_id);
 
             // Invalidate affected report caches
             ReportCacheService::invalidate([

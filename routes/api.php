@@ -356,7 +356,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('payments', [PaymentController::class, 'store']);
         Route::get('payments/order/{orderId}', [PaymentController::class, 'getByOrder']);
         Route::get('payments/unpaid-orders', [PaymentController::class, 'getUnpaidOrders']);
-        Route::delete('payments/{id}', [PaymentController::class, 'destroy']);
+        // Hanya Admin Super dan Admin: menghapus pembayaran menaikkan kembali piutang
+        // pesanan dan menarik poin membernya. Finance boleh mencatat pembayaran, tapi
+        // membatalkan yang sudah tercatat adalah wewenang yang lain.
+        Route::delete('payments/{id}', [PaymentController::class, 'destroy'])
+            ->middleware('role:Admin Super,Admin');
 
         Route::apiResource('expenses', ExpenseController::class);
         Route::apiResource('expense-operationals', ExpenseOperationalController::class);
