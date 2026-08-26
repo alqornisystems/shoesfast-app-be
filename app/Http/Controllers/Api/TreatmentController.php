@@ -40,6 +40,7 @@ class TreatmentController extends Controller
                           JOIN orders_items oi ON oi.orders_id = o.id
                           WHERE oi.id = treatments.orders_items_id LIMIT 1)',
         'technician' => '(SELECT u.name FROM users u WHERE u.id = treatments.users_id)',
+        'partner' => '(SELECT p.name FROM partnerships p WHERE p.id = treatments.partnerships_id)',
         'customer' => '(SELECT c.name FROM customers c
                         JOIN orders o ON o.customers_id = c.id
                         JOIN orders_items oi ON oi.orders_id = o.id
