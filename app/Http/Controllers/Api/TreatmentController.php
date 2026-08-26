@@ -276,6 +276,9 @@ class TreatmentController extends Controller
                 'orders_items_photo' => $treatment->orderItem->photo ?? null,
                 'services_id' => $treatment->services_id,
                 'services_name' => $treatment->service->name ?? null,
+                // Super admin bisa melihat semua cabang sekaligus; tanpa ini satu
+                // antrean berisi barang dari cabang berbeda yang tidak bisa dibedakan.
+                'branch_name' => $treatment->branch_name,
                 'services_estimation' => $treatment->service->estimation ?? null,
                 'customers_name' => $treatment->orderItem->order->customer->name ?? null,
                 'customers_phone' => $treatment->orderItem->order->customer->phone ?? null,

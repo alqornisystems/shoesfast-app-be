@@ -61,6 +61,29 @@ class BentukPaginasiDaftarTest extends TestCase
         $this->assertSame(1, $body['to']);
     }
 
+    public function test_setiap_baris_membawa_nama_cabangnya(): void
+    {
+        Project::create(['name' => 'Cabang Surabaya']); // id 2
+        Project::lupakanNamaCabang();
+
+        // Super admin: `projects_id` null, jadi daftarnya berisi semua cabang —
+        // justru keadaan yang membuat kolom Cabang ada gunanya.
+        $super = new User(['name' => 'Super Uji', 'projects_id' => null]);
+        $super->id = 2;
+        $super->setRelation('role', new Role(['name' => 'Admin Super']));
+        Sanctum::actingAs($super);
+
+        Partnership::withoutGlobalScope('branch')->create([
+            'projects_id' => 2, 'name' => 'Mitra Sol', 'phone' => '81200002222',
+        ]);
+
+        $body = $this->getJson('/api/partnerships')->assertStatus(200)->json();
+
+        // Super admin melihat semua cabang sekaligus; tanpa medan ini baris dari
+        // cabang berbeda tidak bisa dibedakan di panel.
+        $this->assertSame('Cabang Surabaya', $body['data'][0]['branch_name']);
+    }
+
     public function test_daftar_kosong_memberi_from_dan_to_null(): void
     {
         $body = $this->getJson('/api/partnerships')->assertStatus(200)->json();

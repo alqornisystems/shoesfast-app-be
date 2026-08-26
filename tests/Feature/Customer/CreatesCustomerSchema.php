@@ -125,6 +125,16 @@ trait CreatesCustomerSchema
             $t->integer('modified_at')->nullable();
         });
 
+        // Dibaca BranchContext saat penggunanya super admin: cabang aktifnya disimpan
+        // di sini, bukan di sesi.
+        Schema::create('user_preferences', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('users_id')->index();
+            $t->integer('active_branch_id')->nullable();
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
+        });
+
         Schema::create('partnerships', function (Blueprint $t) {
             $t->increments('id');
             $t->integer('projects_id')->default(1);

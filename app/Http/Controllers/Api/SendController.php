@@ -118,7 +118,7 @@ class SendController extends Controller
                     'id' => $send->orderItem->id ?? null,
                     'name' => $send->orderItem->name ?? null,
                 ] : null,
-                'project_name' => $send->project->name ?? null,
+                'branch_name' => $send->project->name ?? null,
                 'created_at' => $send->created_at,
             ];
         });
@@ -159,7 +159,7 @@ class SendController extends Controller
                 'id' => $send->orderItem->id,
                 'name' => $send->orderItem->name,
             ] : null,
-            'project_name' => $send->project ? $send->project->name : null,
+            'branch_name' => $send->project ? $send->project->name : null,
             'created_at' => $send->created_at,
         ]);
     }
@@ -432,7 +432,7 @@ class SendController extends Controller
                 'customer_phone' => $order->customer->phone ?? null,
                 'customer_address' => $order->customer->address ?? null,
                 'customer_maps' => $order->customer->maps ?? null,
-                'project_name' => $order->project->name ?? null,
+                'branch_name' => $order->project->name ?? null,
                 'total_price' => $order->total_price,
                 'created_at' => $order->created_at,
             ];
@@ -502,7 +502,7 @@ class SendController extends Controller
                 'customer_phone' => $item->order->customer->phone ?? null,
                 'customer_address' => $item->order->customer->address ?? null,
                 'customer_maps' => $item->order->customer->maps ?? null,
-                'project_name' => $item->order->project->name ?? null,
+                'branch_name' => $item->order->project->name ?? null,
                 'created_at' => $item->created_at,
             ];
         });
@@ -636,7 +636,7 @@ class SendController extends Controller
                     ? (float) $send->order->customer->longitude
                     : null,
                 'item_name' => $send->type == 1 ? ($send->orderItem->name ?? null) : null,
-                'project_name' => $send->project->name ?? null,
+                'branch_name' => $send->project->name ?? null,
                 'created_at' => $send->created_at,
             ];
         });
@@ -746,7 +746,7 @@ class SendController extends Controller
                     ? (float) $send->order->customer->longitude
                     : null,
                 'item_name' => $send->type == 1 ? ($send->orderItem->name ?? null) : null,
-                'project_name' => $send->project->name ?? null,
+                'branch_name' => $send->project->name ?? null,
                 'created_at' => $send->created_at,
                 'modified_at' => $send->modified_at ?? null,
             ];

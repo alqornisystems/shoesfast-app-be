@@ -2,6 +2,7 @@
 
 namespace App\Traits;
 
+use App\Models\Project;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -44,6 +45,28 @@ trait BranchScoped
                 }
             }
         });
+    }
+
+    /**
+     * Nama cabang ikut di setiap baris, tanpa tiap controller perlu menambahkannya.
+     *
+     * Super admin bisa melihat semua cabang sekaligus, dan saat itu satu daftar berisi
+     * baris dari cabang berbeda yang tidak bisa dibedakan. `projects_id` saja tidak
+     * cukup — panel harus menampilkan namanya.
+     */
+    public function initializeBranchScoped(): void
+    {
+        $this->append('branch_name');
+    }
+
+    public function getBranchNameAttribute(): ?string
+    {
+        return Project::namaCabang($this->projects_id === null ? null : (int) $this->projects_id);
+    }
+
+    public function project()
+    {
+        return $this->belongsTo(Project::class, 'projects_id');
     }
 
     /**

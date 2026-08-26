@@ -85,7 +85,7 @@ class OrderController extends Controller
                     'email' => $order->customer->email,
                     'address' => $order->customer->address,
                 ] : null,
-                'project_name' => $order->project ? $order->project->name : null,
+                'branch_name' => $order->project ? $order->project->name : null,
                 'created_at' => $order->created_at,
             ];
         });
@@ -170,7 +170,7 @@ class OrderController extends Controller
                 'address' => $order->customer->address,
                 'maps' => $order->customer->maps,
             ],
-            'project_name' => $order->project ? $order->project->name : null,
+            'branch_name' => $order->project ? $order->project->name : null,
             'items' => $items,
             'created_at' => $order->created_at,
         ]);

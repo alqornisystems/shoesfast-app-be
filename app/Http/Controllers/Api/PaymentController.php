@@ -119,7 +119,7 @@ class PaymentController extends Controller
                     'note' => $payment->note,
                     'photo' => $payment->photo,
                 ] : null,
-                'project_name' => $order->project ? $order->project->name : null,
+                'branch_name' => $order->project ? $order->project->name : null,
                 'created_at' => $order->created_at,
             ];
         });

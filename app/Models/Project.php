@@ -9,6 +9,34 @@ class Project extends Model
 {
     protected $table = 'projects';
 
+    /**
+     * Peta id => nama cabang, dimuat sekali per request.
+     *
+     * Dipakai accessor `branch_name` di BranchScoped. Tanpa peta ini, satu halaman
+     * daftar berisi 15 baris akan menembakkan 15 query hanya untuk mengambil nama
+     * cabang yang itu-itu juga — jumlah cabangnya sendiri bisa dihitung jari.
+     */
+    private static ?array $namaCabang = null;
+
+    public static function namaCabang(?int $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        if (self::$namaCabang === null) {
+            self::$namaCabang = self::withoutGlobalScopes()->pluck('name', 'id')->all();
+        }
+
+        return self::$namaCabang[$id] ?? null;
+    }
+
+    /** Dipanggil test yang mengganti isi tabel projects di tengah jalan. */
+    public static function lupakanNamaCabang(): void
+    {
+        self::$namaCabang = null;
+    }
+
     // Existing DB uses Unix integer timestamps
     protected $dateFormat = 'U';
 
