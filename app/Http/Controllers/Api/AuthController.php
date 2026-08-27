@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeviceToken;
+use App\Models\Project;
 use App\Models\User;
+use App\Services\BranchContext;
 use App\Support\Base64Image;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,6 +38,46 @@ class AuthController extends Controller
      * tidak akan ketahuan sampai ada karyawan gagal absen di lapangan.
      */
     public const ATTENDANCE_RADIUS_METERS = 1000;
+
+    /**
+     * Titik yang dipakai memeriksa jarak absen — diambil dari baris cabangnya
+     * sendiri di `projects`, bukan satu titik untuk semua.
+     *
+     * Sebelum ini aplikasi mobile menyimpan satu koordinat mati di kodenya, dan
+     * koordinat itu adalah Shoesfast Pusat di Malang. Staf Shoesfast Surabaya
+     * berdiri 83 km dari titik itu — delapan puluh tiga kali radius yang
+     * diizinkan — jadi absen mereka ditolak setiap kali, di mana pun mereka
+     * berdiri di Surabaya.
+     *
+     * `null` berarti "pakai titik bawaanmu sendiri", BUKAN "lewati pemeriksaan".
+     * Bedanya menentukan: 19 dari 23 akun sekarang tidak terikat cabang mana
+     * pun, jadi null yang berarti melewati pemeriksaan akan membuka absen dari
+     * mana saja untuk hampir semua orang — persis hal yang dijaga radius ini.
+     *
+     * Dua keadaan menghasilkan null: pengguna tanpa cabang aktif (super admin,
+     * dan akun yang `projects_id`-nya memang belum diisi), serta cabang yang
+     * kolom koordinatnya masih kosong. Keduanya jatuh ke perilaku yang berlaku
+     * hari ini, tidak lebih longgar.
+     */
+    private function presentAttendance(BranchContext $branchContext): array
+    {
+        $branchId = $branchContext->getActiveBranch();
+
+        $project = $branchId === null
+            ? null
+            : Project::withoutGlobalScopes()->find($branchId);
+
+        return [
+            'radius_meters' => self::ATTENDANCE_RADIUS_METERS,
+            'latitude' => $project?->latitude === null
+                ? null
+                : (float) $project->latitude,
+            'longitude' => $project?->longitude === null
+                ? null
+                : (float) $project->longitude,
+            'branch_name' => $project?->name,
+        ];
+    }
 
     /**
      * Bentuk pengguna yang dikirim ke klien. Satu tempat, dipakai login
@@ -114,9 +156,7 @@ class AuthController extends Controller
                 'active_name' => $branchContext->getActiveBranchName(),
                 'can_switch' => $branchContext->isSuperAdmin(),
             ],
-            'attendance' => [
-                'radius_meters' => self::ATTENDANCE_RADIUS_METERS,
-            ],
+            'attendance' => $this->presentAttendance($branchContext),
         ]);
     }
 
@@ -210,9 +250,7 @@ class AuthController extends Controller
                 'active_name' => $branchContext->getActiveBranchName(),
                 'can_switch' => $branchContext->isSuperAdmin(),
             ],
-            'attendance' => [
-                'radius_meters' => self::ATTENDANCE_RADIUS_METERS,
-            ],
+            'attendance' => $this->presentAttendance($branchContext),
         ]);
     }
 
