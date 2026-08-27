@@ -482,14 +482,32 @@ class TreatmentController extends Controller
      */
     public function getAvailableTechnicians(Request $request)
     {
-        $users = User::where('is_deleted', 0)
+        // Admin ikut, bukan cuma Teknisi: di cabang kecil admin yang mengerjakan
+        // sendiri saat teknisinya libur, dan sebelum ini pekerjaan itu tidak bisa
+        // ditugaskan ke siapa pun — jadi dibiarkan menganggur di antrean.
+        //
+        // Teknisi tetap di urutan atas, dan `role` ikut dikirim supaya daftarnya bisa
+        // menandai siapa yang teknisi dan siapa yang admin. Tanpa penanda itu, dua
+        // nama yang mirip gampang tertukar.
+        $users = User::with('role:id,name')
+            ->where('is_deleted', 0)
             ->whereHas('role', function ($q) {
-                $q->where('name', 'Teknisi');
+                $q->whereIn('name', ['Teknisi', 'Admin', 'Admin Super']);
             })
+            ->orderByRaw("CASE
+                WHEN (SELECT r.name FROM roles r WHERE r.id = users.roles_id) = 'Teknisi' THEN 0
+                ELSE 1
+            END")
             ->orderBy('name', 'ASC')
-            ->get(['id', 'name', 'phone', 'email']);
+            ->get(['id', 'name', 'phone', 'email', 'roles_id']);
 
-        return response()->json($users);
+        return response()->json($users->map(fn ($user) => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'phone' => $user->phone,
+            'email' => $user->email,
+            'role' => $user->role?->name,
+        ]));
     }
 
     /**
