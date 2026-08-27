@@ -482,21 +482,26 @@ class TreatmentController extends Controller
      */
     public function getAvailableTechnicians(Request $request)
     {
-        // Admin ikut, bukan cuma Teknisi: di cabang kecil admin yang mengerjakan
-        // sendiri saat teknisinya libur, dan sebelum ini pekerjaan itu tidak bisa
-        // ditugaskan ke siapa pun — jadi dibiarkan menganggur di antrean.
+        // Bukan cuma Teknisi. Kurir yang sedang di bengkel dan admin di cabang kecil
+        // sama-sama mengerjakan sendiri saat teknisinya libur, dan sebelum ini
+        // pekerjaan itu tidak bisa ditugaskan ke siapa pun — jadi dibiarkan menganggur
+        // di antrean.
         //
-        // Teknisi tetap di urutan atas, dan `role` ikut dikirim supaya daftarnya bisa
-        // menandai siapa yang teknisi dan siapa yang admin. Tanpa penanda itu, dua
-        // nama yang mirip gampang tertukar.
+        // Urutannya sengaja: Teknisi, lalu Kurir, lalu Admin. Itu urutan seberapa
+        // sering seseorang benar-benar mengerjakan barang, jadi pilihan yang biasa
+        // selalu berada paling dekat.
+        //
+        // `role` ikut dikirim supaya daftarnya bisa menandai siapa yang mana. Tanpa
+        // penanda itu, dua nama yang mirip gampang tertukar.
         $users = User::with('role:id,name')
             ->where('is_deleted', 0)
             ->whereHas('role', function ($q) {
-                $q->whereIn('name', ['Teknisi', 'Admin', 'Admin Super']);
+                $q->whereIn('name', ['Teknisi', 'Kurir', 'Admin', 'Admin Super']);
             })
-            ->orderByRaw("CASE
-                WHEN (SELECT r.name FROM roles r WHERE r.id = users.roles_id) = 'Teknisi' THEN 0
-                ELSE 1
+            ->orderByRaw("CASE (SELECT r.name FROM roles r WHERE r.id = users.roles_id)
+                WHEN 'Teknisi' THEN 0
+                WHEN 'Kurir' THEN 1
+                ELSE 2
             END")
             ->orderBy('name', 'ASC')
             ->get(['id', 'name', 'phone', 'email', 'roles_id']);
