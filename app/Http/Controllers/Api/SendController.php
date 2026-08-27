@@ -478,7 +478,19 @@ class SendController extends Controller
 
         $this->terapkanSortir($query, $request, self::SORTIR_JEMPUT, 'orders.id');
 
-        $orders = $query->paginate($request->input('per_page', 15));
+        // Aplikasi kurir meminta antrean ini TANPA `page` dan menampilkan seluruh
+        // hasilnya dalam satu layar bergulir. Kalau permintaan tanpa halaman diam-diam
+        // dipotong lima belas baris, tugas ke-16 dan seterusnya hilang dari ponsel
+        // kurir tanpa tanda apa pun — dan kurirnya tidak akan pernah tahu.
+        //
+        // Jadi: yang meminta halaman (panel admin) dipaginasi; yang tidak meminta
+        // halaman menerima seluruh antrean dalam satu halaman. Bentuk responsnya tetap
+        // paginator yang sama untuk keduanya.
+        $perPage = $request->filled('page')
+            ? (int) $request->input('per_page', 15)
+            : max(1, (clone $query)->count());
+
+        $orders = $query->paginate($perPage);
 
         $orders->getCollection()->transform(function ($order) {
             return [
@@ -560,7 +572,19 @@ class SendController extends Controller
 
         $this->terapkanSortir($query, $request, self::SORTIR_ANTAR, 'orders_items.id');
 
-        $items = $query->paginate($request->input('per_page', 15));
+        // Aplikasi kurir meminta antrean ini TANPA `page` dan menampilkan seluruh
+        // hasilnya dalam satu layar bergulir. Kalau permintaan tanpa halaman diam-diam
+        // dipotong lima belas baris, tugas ke-16 dan seterusnya hilang dari ponsel
+        // kurir tanpa tanda apa pun — dan kurirnya tidak akan pernah tahu.
+        //
+        // Jadi: yang meminta halaman (panel admin) dipaginasi; yang tidak meminta
+        // halaman menerima seluruh antrean dalam satu halaman. Bentuk responsnya tetap
+        // paginator yang sama untuk keduanya.
+        $perPage = $request->filled('page')
+            ? (int) $request->input('per_page', 15)
+            : max(1, (clone $query)->count());
+
+        $items = $query->paginate($perPage);
 
         $items->getCollection()->transform(function ($item) {
             // Satu pintu: jalur relatif jadi URL, dan URL domain lama yang sudah mati

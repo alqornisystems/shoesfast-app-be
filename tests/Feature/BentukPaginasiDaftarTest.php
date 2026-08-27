@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Customer;
+use App\Models\Order;
 use App\Models\Partnership;
 use App\Models\Project;
 use App\Models\Role;
@@ -91,6 +93,32 @@ class BentukPaginasiDaftarTest extends TestCase
                 ->assertStatus(200)
                 ->assertJsonStructure(array_merge(['data'], self::MEDAN_PAGINATOR));
         }
+    }
+
+    public function test_antrean_tanpa_parameter_halaman_mengirim_seluruh_isinya(): void
+    {
+        // Aplikasi kurir meminta antrean ini tanpa `page`. Kalau permintaan itu
+        // dipotong lima belas baris, tugas ke-16 hilang dari ponselnya tanpa tanda.
+        $customer = Customer::withoutGlobalScope('branch')->create([
+            'projects_id' => 1, 'name' => 'Budi', 'phone' => '81200001111',
+        ]);
+
+        for ($i = 0; $i < 18; $i++) {
+            Order::withoutGlobalScope('branch')->create([
+                'projects_id' => 1, 'customers_id' => $customer->id,
+                'code' => 'INV'.$i, 'date' => time(), 'total_price' => 50000, 'status' => 0,
+            ]);
+        }
+
+        $semua = $this->getJson('/api/sends/pickup-waiting-list')->assertStatus(200)->json();
+        $this->assertCount(18, $semua['data']);
+        $this->assertSame(1, $semua['last_page']);
+
+        // Yang meminta halaman tetap dipaginasi seperti biasa.
+        $sehalaman = $this->getJson('/api/sends/pickup-waiting-list?page=1&per_page=15')
+            ->assertStatus(200)->json();
+        $this->assertCount(15, $sehalaman['data']);
+        $this->assertSame(2, $sehalaman['last_page']);
     }
 
     public function test_antrean_jemput_menolak_kolom_urut_di_luar_daftar_putih(): void
