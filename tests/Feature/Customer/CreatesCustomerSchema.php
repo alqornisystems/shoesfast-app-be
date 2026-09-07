@@ -119,7 +119,11 @@ trait CreatesCustomerSchema
             $t->integer('projects_id')->nullable();
             $t->string('name')->nullable();
             $t->string('email')->nullable();
+            $t->string('phone')->nullable();
             $t->string('password')->nullable();
+            // Jabatan dipakai lewat whereHas('role') — antara lain saat mencari
+            // Teknisi Leader untuk notifikasi QC.
+            $t->integer('roles_id')->nullable();
             $t->tinyInteger('is_deleted')->default(0);
             $t->integer('created_at')->nullable();
             $t->integer('modified_at')->nullable();
@@ -127,6 +131,16 @@ trait CreatesCustomerSchema
 
         // Dibaca BranchContext saat penggunanya super admin: cabang aktifnya disimpan
         // di sini, bukan di sesi.
+        // Dibaca saat pengerjaan diselesaikan: notifikasi QC mencari pengguna
+        // ber-jabatan "Teknisi Leader" lewat whereHas('role').
+        Schema::create('roles', function (Blueprint $t) {
+            $t->increments('id');
+            $t->string('name', 40)->nullable();
+            $t->tinyInteger('is_deleted')->default(0);
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
+        });
+
         Schema::create('user_preferences', function (Blueprint $t) {
             $t->increments('id');
             $t->integer('users_id')->index();

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\OrderItem;
 use App\Models\Treatment;
 use App\Models\User;
 use App\Services\FcmService;
@@ -394,6 +395,51 @@ class TreatmentController extends Controller
     }
 
     /**
+     * Status barang di `orders_items`, sejauh yang disentuh alur ini.
+     *
+     * 2 = selesai dikerjakan, siap diantar — inilah yang disaring
+     * `sends/delivery-waiting-list`. 3 dan 4 dipasang SendController saat
+     * pengantaran dibuat dan diselesaikan.
+     */
+    private const BARANG_SIAP_ANTAR = 2;
+
+    /**
+     * Naikkan barang ke "siap diantar" begitu SELURUH pekerjaannya selesai.
+     *
+     * Tanpa ini barang tidak pernah sampai ke antrean pengantaran: daftar itu
+     * menyaring `orders_items.status = 2`, dan tidak ada satu pun kode yang
+     * pernah menyetelnya. Barang yang selesai dikerjakan menumpuk tanpa pernah
+     * dijadwalkan pulang, dan tidak ada galat di mana pun — daftarnya hanya
+     * tampak sepi.
+     *
+     * Syaratnya seluruh treatment, bukan yang pertama selesai: sepatu dengan
+     * cuci + repaint + coating tidak boleh masuk antrean antar setelah cucinya
+     * saja, karena barangnya akan pulang setengah jadi.
+     *
+     * Status 3 dan 4 tidak diturunkan kembali. Barang yang sudah berangkat atau
+     * sudah sampai tidak boleh ditarik mundur ke antrean hanya karena satu
+     * treatment lamanya baru ditutup belakangan.
+     */
+    private function segarkanStatusBarang(?int $ordersItemsId): void
+    {
+        if ($ordersItemsId === null) {
+            return;
+        }
+
+        $masihBerjalan = Treatment::where('orders_items_id', $ordersItemsId)
+            ->whereNull('done_at')
+            ->exists();
+
+        if ($masihBerjalan) {
+            return;
+        }
+
+        OrderItem::where('id', $ordersItemsId)
+            ->whereNotIn('status', [self::BARANG_SIAP_ANTAR, 3, 4])
+            ->update(['status' => self::BARANG_SIAP_ANTAR]);
+    }
+
+    /**
      * Update treatment status
      */
     public function updateStatus(Request $request, $id)
@@ -434,6 +480,13 @@ class TreatmentController extends Controller
             }
 
             $treatment->update($updateData);
+
+            // Di dalam transaksi yang sama: barang yang naik ke "siap diantar"
+            // karena pekerjaan ini, lalu pekerjaannya sendiri gagal disimpan,
+            // akan berdiri di antrean antar tanpa alasan.
+            if ((int) $validated['status'] === 2) {
+                $this->segarkanStatusBarang($treatment->orders_items_id);
+            }
 
             DB::commit();
 
@@ -580,6 +633,8 @@ class TreatmentController extends Controller
                     'note' => ($treatment->note ? $treatment->note."\n\n" : '').'[Diselesaikan paksa] - '.date('Y-m-d H:i:s'),
                     'modified_by' => auth()->id(),
                 ]);
+
+                $this->segarkanStatusBarang($treatment->orders_items_id);
             }
 
             DB::commit();
