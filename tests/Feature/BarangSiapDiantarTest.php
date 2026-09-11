@@ -256,6 +256,75 @@ class BarangSiapDiantarTest extends TestCase
         $this->assertContains($item->id, $this->isiDaftarAntar());
     }
 
+    private function jadwalkanAntar(OrderItem $item)
+    {
+        // Kurir sungguhan di tabel users — `users_id` divalidasi `exists`.
+        $kurir = User::withoutGlobalScopes()->firstOrCreate(
+            ['email' => 'kurir@uji.test'],
+            ['name' => 'Kurir Uji', 'projects_id' => 1],
+        );
+
+        return $this->postJson('/api/sends', [
+            'users_id' => $kurir->id,
+            'orders_items_id' => $item->id,
+            'date' => date('Y-m-d'),
+            'type' => 1,
+        ]);
+    }
+
+    /**
+     * Daftar antar saja tidak cukup: tugas antar bisa dibuat dari form lain, dan
+     * dua barang INV2026060323 dijadwalkan pulang padahal pekerjaannya masih
+     * terbuka. Pagarnya harus di tempat tugas itu dibuat.
+     */
+    public function test_tugas_antar_ditolak_selama_pekerjaannya_belum_selesai(): void
+    {
+        [$item] = $this->barang(1);
+
+        $this->jadwalkanAntar($item)
+            ->assertStatus(422)
+            ->assertJsonPath('message', fn ($m) => str_contains($m, 'belum selesai'));
+    }
+
+    public function test_tugas_antar_diterima_setelah_semua_pekerjaan_selesai(): void
+    {
+        [$item, $treatments] = $this->barang(2);
+        $this->selesaikan($treatments[0]);
+        $this->jadwalkanAntar($item)->assertStatus(422);
+
+        $this->selesaikan($treatments[1]);
+        $this->jadwalkanAntar($item)->assertStatus(201);
+    }
+
+    /** Diselesaikan paksa dihitung selesai — itulah gunanya tombol itu. */
+    public function test_selesai_paksa_membuka_jalan_ke_pengantaran(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->postJson('/api/treatments/force-complete', ['treatment_ids' => [$treatments[0]->id]])
+            ->assertStatus(200);
+
+        $this->jadwalkanAntar($item)->assertStatus(201);
+    }
+
+    public function test_tugas_antar_ditolak_kalau_pesanannya_sudah_tidak_ada(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['is_deleted' => 1]);
+
+        $this->jadwalkanAntar($item)->assertStatus(422);
+    }
+
+    /** Barang yang sudah dijadwalkan tidak boleh dapat tugas antar kedua. */
+    public function test_tugas_antar_ditolak_kalau_sudah_dijadwalkan(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        $this->jadwalkanAntar($item)->assertStatus(201);
+
+        $this->jadwalkanAntar($item)->assertStatus(422);
+    }
+
     public function test_selesai_paksa_juga_menyiapkan_barangnya(): void
     {
         [$item, $treatments] = $this->barang(1);

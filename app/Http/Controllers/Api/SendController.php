@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Send;
+use App\Models\Treatment;
 use App\Models\User;
 use App\Services\CustomerPointService;
 use App\Services\FcmService;
@@ -232,6 +233,18 @@ class SendController extends Controller
             return response()->json([
                 'message' => 'orders_items_id is required for delivery',
             ], 422);
+        }
+
+        // Barang hanya boleh dijadwalkan pulang kalau memang siap — aturan yang sama
+        // dengan daftar antar, ditegakkan di tempat tugasnya dibuat. Menyaring daftar
+        // saja tidak cukup: tugas antar juga dibuat dari form Buat Pengiriman, dan dari
+        // sana dua barang INV2026060323 sempat dijadwalkan pulang padahal pekerjaannya
+        // masih terbuka.
+        if ((int) $validated['type'] === 1) {
+            $alasan = $this->alasanBelumSiapAntar((int) $validated['orders_items_id']);
+            if ($alasan !== null) {
+                return response()->json(['message' => $alasan], 422);
+            }
         }
 
         DB::beginTransaction();
@@ -606,6 +619,56 @@ class SendController extends Controller
         });
 
         return response()->json($items);
+    }
+
+    /**
+     * Kenapa sebuah barang belum boleh dijadwalkan antar — null kalau sudah boleh.
+     *
+     * Satu pesan per sebab, bukan "tidak bisa" yang umum: admin perlu tahu apakah
+     * yang ditunggu teknisi, pesanan yang dibatalkan, atau tugas yang sudah ada.
+     * Syaratnya persis `OrderItem::siapDiantar()`; urutan pemeriksaan di sini hanya
+     * menentukan sebab mana yang disebut lebih dulu.
+     */
+    private function alasanBelumSiapAntar(int $ordersItemsId): ?string
+    {
+        if (OrderItem::whereKey($ordersItemsId)->siapDiantar()->exists()) {
+            return null;
+        }
+
+        $item = OrderItem::withoutGlobalScope('branch')->find($ordersItemsId);
+        if (! $item) {
+            return 'Barang tidak ditemukan.';
+        }
+
+        $pesananAda = Order::withoutGlobalScope('branch')
+            ->whereKey($item->orders_id)
+            ->exists();
+        if (! $pesananAda) {
+            return 'Pesanan barang ini sudah tidak ada, jadi tidak ada pelanggan yang dituju.';
+        }
+
+        if ((int) $item->status === 4) {
+            return 'Barang ini sudah sampai di tangan pelanggan.';
+        }
+
+        $sudahDijadwalkan = Send::withoutGlobalScope('branch')
+            ->where('orders_items_id', $item->id)
+            ->where('type', 1)
+            ->exists();
+        if ($sudahDijadwalkan) {
+            return 'Barang ini sudah punya tugas antar.';
+        }
+
+        $terbuka = Treatment::withoutGlobalScope('branch')
+            ->where('orders_items_id', $item->id)
+            ->whereNull('done_at')
+            ->count();
+        if ($terbuka > 0) {
+            return "Pengerjaan barang ini belum selesai — masih ada {$terbuka} pekerjaan terbuka. "
+                .'Selesaikan dulu, atau selesaikan paksa kalau memang harus dikirim sekarang.';
+        }
+
+        return 'Barang ini belum punya pekerjaan yang diselesaikan.';
     }
 
     /**

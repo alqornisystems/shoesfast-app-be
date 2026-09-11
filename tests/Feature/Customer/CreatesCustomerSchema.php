@@ -141,6 +141,17 @@ trait CreatesCustomerSchema
             $t->integer('modified_at')->nullable();
         });
 
+        // Dibaca saat tugas antar dibuat: kurirnya diberi notifikasi FCM.
+        Schema::create('device_tokens', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('users_id');
+            $t->string('token', 255)->unique();
+            $t->string('platform', 20)->nullable();
+            $t->integer('is_deleted')->default(0);
+            $t->integer('created_at')->nullable();
+            $t->integer('modified_at')->nullable();
+        });
+
         Schema::create('user_preferences', function (Blueprint $t) {
             $t->increments('id');
             $t->integer('users_id')->index();
