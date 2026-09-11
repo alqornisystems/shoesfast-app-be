@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\BranchScoped;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class OrderItem extends Model
@@ -89,5 +90,46 @@ class OrderItem extends Model
     public function sends()
     {
         return $this->hasMany(Send::class, 'orders_items_id');
+    }
+
+    /**
+     * Barang yang siap dijadwalkan pulang — satu definisi untuk setiap daftar antar.
+     *
+     * Kesiapan dihitung dari PEKERJAANNYA, bukan dari kolom `status`. Kolom itu
+     * basi di dua arah: ratusan barang yang selesai dikerjakan sebelum status barang
+     * ikut naik masih tercatat 0 atau 1 dan tidak pernah muncul di antrean antar,
+     * sementara barang yang terlanjur tercatat 2 bisa masih punya pekerjaan terbuka
+     * dan dijadwalkan pulang setengah jadi.
+     *
+     * Syaratnya:
+     * - pesanannya masih ada dan tidak dibatalkan — barang yatim tidak punya
+     *   pelanggan maupun alamat untuk dituju;
+     * - punya pekerjaan, dan SEMUA pekerjaannya sudah selesai (`done_at` terisi);
+     * - belum punya tugas antar yang masih hidup — tugas yang dihapus tidak dihitung,
+     *   jadi barangnya kembali ke antrean alih-alih hilang;
+     * - belum sampai di tangan pelanggan (status 4).
+     *
+     * Pesanan, pekerjaan, dan tugas antarnya dinilai TANPA saringan cabang. Yang
+     * dicari adalah milik barang ini, di cabang mana pun tercatat — data lama
+     * menyimpan barang di satu cabang dan pekerjaannya di cabang lain, dan dari
+     * kacamata cabang yang sedang aktif barang itu seolah tidak punya pekerjaan
+     * sama sekali. Saringan cabang tetap berlaku pada barangnya sendiri.
+     */
+    public function scopeSiapDiantar(Builder $query): Builder
+    {
+        return $query
+            ->whereHas('order', function ($q) {
+                $q->withoutGlobalScope('branch');
+            })
+            ->whereHas('treatments', function ($q) {
+                $q->withoutGlobalScope('branch');
+            })
+            ->whereDoesntHave('treatments', function ($q) {
+                $q->withoutGlobalScope('branch')->whereNull('done_at');
+            })
+            ->whereDoesntHave('sends', function ($q) {
+                $q->withoutGlobalScope('branch')->where('type', 1);
+            })
+            ->where('orders_items.status', '!=', 4);
     }
 }

@@ -142,6 +142,120 @@ class BarangSiapDiantarTest extends TestCase
         $this->assertSame(0, $this->statusBarang($item));
     }
 
+    /** Kode pesanan barang di daftar antar, sebagaimana dilihat halaman delivery. */
+    private function isiDaftarAntar(): array
+    {
+        $body = $this->getJson('/api/sends/delivery-waiting-list?page=1&per_page=100')
+            ->assertStatus(200)
+            ->json();
+
+        return array_column($body['data'], 'id');
+    }
+
+    private function tugasAntar(OrderItem $item, int $isDeleted = 0): void
+    {
+        \App\Models\Send::withoutGlobalScopes()->insert([
+            'projects_id' => 1, 'orders_id' => $item->orders_id,
+            'orders_items_id' => $item->id, 'type' => 1, 'status' => 0,
+            'date' => time(), 'is_deleted' => $isDeleted,
+        ]);
+    }
+
+    /**
+     * Data lama: ratusan barang selesai dikerjakan SEBELUM status barang ikut
+     * naik, jadi kolom status-nya masih 0 atau 1. Daftar antar harus menghitung
+     * kesiapan dari pekerjaannya, bukan dari kolom yang tertinggal itu.
+     */
+    public function test_barang_selesai_tampil_walau_kolom_statusnya_tertinggal(): void
+    {
+        foreach ([0, 1] as $statusLama) {
+            [$item, $treatments] = $this->barang(1);
+            Treatment::withoutGlobalScopes()->where('id', $treatments[0]->id)->update(['done_at' => time(), 'status' => 2]);
+            OrderItem::withoutGlobalScope('branch')->where('id', $item->id)->update(['status' => $statusLama]);
+
+            $this->assertContains($item->id, $this->isiDaftarAntar(), "status lama $statusLama harus tetap tampil");
+        }
+    }
+
+    /** Kolom status yang terlanjur 2 tidak boleh meloloskan barang yang pekerjaannya belum selesai. */
+    public function test_barang_yang_pekerjaannya_belum_selesai_tidak_tampil(): void
+    {
+        [$item] = $this->barang(1);
+        OrderItem::withoutGlobalScope('branch')->where('id', $item->id)->update(['status' => 2]);
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+    }
+
+    public function test_barang_yang_sudah_dijadwalkan_antar_tidak_tampil_lagi(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        $this->tugasAntar($item);
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+    }
+
+    /** Tugas antarnya dihapus: barangnya harus kembali ke antrean, bukan hilang. */
+    public function test_barang_kembali_ke_antrean_kalau_tugas_antarnya_dihapus(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        OrderItem::withoutGlobalScope('branch')->where('id', $item->id)->update(['status' => 3]);
+        $this->tugasAntar($item, isDeleted: 1);
+
+        $this->assertContains($item->id, $this->isiDaftarAntar());
+    }
+
+    /** Sudah sampai di tangan pelanggan: jangan pernah ditawarkan untuk diantar lagi. */
+    public function test_barang_yang_sudah_sampai_tidak_ditawarkan_lagi(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        OrderItem::withoutGlobalScope('branch')->where('id', $item->id)->update(['status' => 4]);
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+    }
+
+    /**
+     * Barang yatim: pesanannya sudah tidak ada. Tampil di daftar antar berarti
+     * kurir disuruh mengantar barang yang tidak punya pelanggan maupun alamat.
+     */
+    public function test_barang_yang_pesanannya_sudah_tidak_ada_tidak_tampil(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->delete();
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+    }
+
+    public function test_barang_yang_pesanannya_dibatalkan_tidak_tampil(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['is_deleted' => 1]);
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+    }
+
+    /**
+     * Pekerjaannya tercatat di cabang lain dari barangnya. Kesiapan dinilai dari
+     * pekerjaan milik barang itu, di cabang mana pun — bukan dari yang kebetulan
+     * terlihat oleh cabang yang sedang aktif.
+     */
+    public function test_kesiapan_tidak_bergantung_cabang_yang_sedang_aktif(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+
+        Treatment::withoutGlobalScopes()->where('id', $treatments[0]->id)->update(['projects_id' => 2]);
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['projects_id' => 2]);
+
+        $this->assertContains($item->id, $this->isiDaftarAntar());
+    }
+
     public function test_selesai_paksa_juga_menyiapkan_barangnya(): void
     {
         [$item, $treatments] = $this->barang(1);

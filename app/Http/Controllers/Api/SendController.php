@@ -550,10 +550,7 @@ class SendController extends Controller
         ], $this->aturanSortir(self::SORTIR_ANTAR)));
 
         $query = OrderItem::with(['order.customer', 'order.project'])
-            ->where('status', 2) // Completed items only
-            ->whereDoesntHave('sends', function ($q) {
-                $q->where('type', 1); // No delivery created yet
-            })
+            ->siapDiantar()
             ->orderBy('id', 'DESC');
 
         if ($request->filled('search')) {
@@ -617,10 +614,7 @@ class SendController extends Controller
     public function getAvailableDeliveryItems(Request $request)
     {
         $items = OrderItem::with(['order.customer'])
-            ->where('status', 2) // Completed items only
-            ->whereDoesntHave('sends', function ($q) {
-                $q->where('type', 1); // No delivery created yet
-            })
+            ->siapDiantar()
             ->orderBy('id', 'DESC')
             ->limit(50)
             ->get();
