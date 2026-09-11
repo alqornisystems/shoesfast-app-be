@@ -315,6 +315,24 @@ class BarangSiapDiantarTest extends TestCase
         $this->jadwalkanAntar($item)->assertStatus(422);
     }
 
+    /**
+     * Pesanan Selesai sudah ditutup admin — barangnya diambil sendiri di toko.
+     * Tanpa aturan ini ribuan barang lama ikut antre antar.
+     */
+    public function test_barang_dari_pesanan_selesai_tidak_tampil_dan_tidak_bisa_diantar(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        $this->assertContains($item->id, $this->isiDaftarAntar());
+
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['status' => 3]);
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+        $this->jadwalkanAntar($item)
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Pesanan barang ini sudah berstatus Selesai.');
+    }
+
     /** Barang yang sudah dijadwalkan tidak boleh dapat tugas antar kedua. */
     public function test_tugas_antar_ditolak_kalau_sudah_dijadwalkan(): void
     {

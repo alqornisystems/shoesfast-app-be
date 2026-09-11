@@ -104,6 +104,9 @@ class OrderItem extends Model
      * Syaratnya:
      * - pesanannya masih ada dan tidak dibatalkan — barang yatim tidak punya
      *   pelanggan maupun alamat untuk dituju;
+     * - pesanannya belum berstatus Selesai (3) — admin menutup pesanan yang
+     *   barangnya sudah diambil sendiri di toko, dan tidak ada kolom lain yang
+     *   mencatat pengambilan itu;
      * - punya pekerjaan, dan SEMUA pekerjaannya sudah selesai (`done_at` terisi);
      * - belum punya tugas antar yang masih hidup — tugas yang dihapus tidak dihitung,
      *   jadi barangnya kembali ke antrean alih-alih hilang;
@@ -115,11 +118,13 @@ class OrderItem extends Model
      * kacamata cabang yang sedang aktif barang itu seolah tidak punya pekerjaan
      * sama sekali. Saringan cabang tetap berlaku pada barangnya sendiri.
      */
+    public const PESANAN_SELESAI = 3;
+
     public function scopeSiapDiantar(Builder $query): Builder
     {
         return $query
             ->whereHas('order', function ($q) {
-                $q->withoutGlobalScope('branch');
+                $q->withoutGlobalScope('branch')->where('orders.status', '!=', self::PESANAN_SELESAI);
             })
             ->whereHas('treatments', function ($q) {
                 $q->withoutGlobalScope('branch');

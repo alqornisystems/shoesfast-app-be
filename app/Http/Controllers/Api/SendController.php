@@ -640,11 +640,13 @@ class SendController extends Controller
             return 'Barang tidak ditemukan.';
         }
 
-        $pesananAda = Order::withoutGlobalScope('branch')
-            ->whereKey($item->orders_id)
-            ->exists();
-        if (! $pesananAda) {
+        $pesanan = Order::withoutGlobalScope('branch')->find($item->orders_id);
+        if (! $pesanan) {
             return 'Pesanan barang ini sudah tidak ada, jadi tidak ada pelanggan yang dituju.';
+        }
+
+        if ((int) $pesanan->status === OrderItem::PESANAN_SELESAI) {
+            return 'Pesanan barang ini sudah berstatus Selesai.';
         }
 
         if ((int) $item->status === 4) {
