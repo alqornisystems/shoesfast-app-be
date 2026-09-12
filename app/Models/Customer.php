@@ -64,6 +64,18 @@ class Customer extends Model implements AuthenticatableContract
     ];
 
     /**
+     * `created_at`/`modified_at` di JSON tetap detik unix seperti di database.
+     *
+     * Bawaan Laravel mengubah kolom timestamp jadi teks ISO lebih dulu, lalu cast
+     * `integer` di atas memotong teks itu menjadi tahunnya saja — `2024`, yang
+     * dibaca layar sebagai 1 Januari 1970.
+     */
+    protected function serializeDate(\DateTimeInterface $date): int
+    {
+        return $date->getTimestamp();
+    }
+
+    /**
      * Kolom kata sandi tabel ini bernama `pin`, bukan `password`.
      */
     public function getAuthPassword(): string

@@ -156,6 +156,18 @@ class CustomerCrmTest extends TestCase
         $this->assertCount(1, $data['payments']);
     }
 
+    /** Bawaan Laravel memotong timestamp jadi tahunnya saja (`2024`) di JSON. */
+    public function test_waktu_daftar_dikirim_sebagai_detik_unix(): void
+    {
+        $c = $this->pelanggan('Budi');
+        Customer::whereKey($c->id)->update(['created_at' => 1713589077]);
+
+        $this->getJson("/api/customers/{$c->id}/profile")
+            ->assertStatus(200)
+            ->assertJsonPath('data.customer.created_at', 1713589077);
+        $this->assertSame(1713589077, $this->getJson('/api/customers')->json('data.0.created_at'));
+    }
+
     public function test_profil_menandai_nomor_yang_dipakai_pelanggan_lain(): void
     {
         $a = $this->pelanggan('Budi');
