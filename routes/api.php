@@ -293,6 +293,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('orders/search/services', [OrderController::class, 'searchServices']);
         Route::get('orders/available-pickup', [OrderController::class, 'getAvailablePickupOrders']);
         Route::post('orders/{id}/invoice-link', [OrderController::class, 'invoiceLink']);
+        Route::post('orders/mark-completed', [OrderController::class, 'markCompleted']);
         Route::apiResource('orders', OrderController::class);
 
         // index-nya sudah dideklarasikan di blok lapangan supaya teknisi/kurir bisa memilih

@@ -28,6 +28,20 @@ class OrderController extends Controller
         'customer' => '(SELECT c.name FROM customers c WHERE c.id = orders.customers_id)',
     ];
 
+    private const PESANAN_SELESAI = 3;
+
+    /** Laporan yang ikut berubah kalau pesanan berubah. */
+    private const CACHE_LAPORAN = [
+        'sales',
+        'orders',
+        'receivables',
+        'hpp',
+        'profit-loss',
+        'cash-flow',
+        'customers',
+        'top-services',
+    ];
+
     protected WhatsAppService $whatsapp;
 
     public function __construct(WhatsAppService $whatsapp)
@@ -43,8 +57,11 @@ class OrderController extends Controller
         $query = Order::with(['customer', 'project', 'sends'])
             ->orderBy('id', 'DESC');
 
-        // Filter by status
-        if ($request->has('status') && $request->status !== '') {
+        // Filter by status. `belum_selesai` = semua kecuali Selesai (3) — tampilan
+        // bawaan daftar pesanan, supaya pesanan yang sudah beres tidak menumpuk.
+        if ($request->input('status') === 'belum_selesai') {
+            $query->where('status', '!=', self::PESANAN_SELESAI);
+        } elseif ($request->has('status') && $request->status !== '') {
             $query->where('status', $request->status);
         }
 
@@ -366,16 +383,7 @@ class OrderController extends Controller
             DB::commit();
 
             // Invalidate affected report caches
-            ReportCacheService::invalidate([
-                'sales',
-                'orders',
-                'receivables',
-                'hpp',
-                'profit-loss',
-                'cash-flow',
-                'customers',
-                'top-services',
-            ]);
+            ReportCacheService::invalidate(self::CACHE_LAPORAN);
 
             // Send WhatsApp notification for Google Maps review when order is completed
             if (isset($validated['status']) && $validated['status'] == 2 && $oldStatus != 2) {
@@ -407,6 +415,33 @@ class OrderController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * POST /api/orders/mark-completed — tandai banyak pesanan Selesai sekaligus.
+     *
+     * Status Selesai tidak punya efek samping: poin member diberikan saat pesanan
+     * lunas (CustomerPointService), dan WA minta ulasan dikirim saat status 2.
+     * Saringan cabang Order tetap berlaku, jadi pesanan cabang lain tidak tersentuh
+     * walau id-nya ikut dikirim.
+     */
+    public function markCompleted(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $jumlah = Order::whereIn('id', $validated['ids'])
+            ->where('status', '!=', self::PESANAN_SELESAI)
+            ->update(['status' => self::PESANAN_SELESAI, 'modified_by' => auth()->id()]);
+
+        ReportCacheService::invalidate(self::CACHE_LAPORAN);
+
+        return response()->json([
+            'message' => "{$jumlah} pesanan ditandai selesai",
+            'updated' => $jumlah,
+        ]);
     }
 
     /**
