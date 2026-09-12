@@ -234,6 +234,52 @@ ke nomor rekening yang salah.
 
 ---
 
+## 10. Catatan dan tag pelanggan (CRM)
+
+Setara migrasi `2026_09_12_000001_create_crm_tables`. Dibutuhkan tab Catatan dan tag di
+halaman profil pelanggan.
+
+```sql
+CREATE TABLE IF NOT EXISTS `customer_notes` (
+  `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `customers_id` INT          NOT NULL,
+  `note`         TEXT         NOT NULL,
+  `is_deleted`   INT          NOT NULL DEFAULT 0,
+  `created_at`   INT          NULL,
+  `created_by`   INT          NULL,
+  `modified_at`  INT          NULL,
+  `modified_by`  INT          NULL,
+  PRIMARY KEY (`id`),
+  KEY `customer_notes_customers_id_index` (`customers_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `customer_tags` (
+  `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `customers_id` INT          NOT NULL,
+  `tag`          VARCHAR(50)  NOT NULL,
+  `created_at`   INT          NULL,
+  `created_by`   INT          NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `customer_tags_customers_id_tag_unique` (`customers_id`, `tag`),
+  KEY `customer_tags_tag_index` (`tag`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+Segmen pelanggan **tidak** butuh tabel: dihitung dari `orders` setiap kali diminta.
+Batasnya punya nilai bawaan dan hanya perlu baris `settings` kalau mau diubah:
+
+```sql
+-- Opsional. Tanpa baris ini berlaku: 60 hari, 120 hari, Rp 2.000.000, 5 pesanan.
+INSERT INTO `settings` (`key`, `value`, `created_at`, `updated_at`) VALUES
+  ('crm_hari_mau_hilang',   '60',      NOW(), NOW()),
+  ('crm_hari_tidur',        '120',     NOW(), NOW()),
+  ('crm_min_belanja_vip',   '2000000', NOW(), NOW()),
+  ('crm_min_pesanan_loyal', '5',       NOW(), NOW())
+ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `updated_at` = NOW();
+```
+
+---
+
 ## Setelah dijalankan
 
 Periksa hasilnya:
@@ -244,6 +290,7 @@ SHOW COLUMNS FROM `treatments` LIKE 'started_at';
 SHOW COLUMNS FROM `sends` LIKE 'tracking_%';
 SHOW COLUMNS FROM `payments` LIKE 'orders_items_id';
 SHOW TABLES LIKE 'device_tokens';
+SHOW TABLES LIKE 'customer_%';
 SELECT `key`, `value` FROM `settings` WHERE `key` LIKE 'app_%';
 SELECT `id`, `name`, `whatsapp`, `bank_name`, `bank_account_number` FROM `projects` WHERE `is_deleted` = 0;
 ```
@@ -260,9 +307,10 @@ INSERT IGNORE INTO `migrations` (`migration`, `batch`) VALUES
   ('2026_08_13_000003_add_started_at_to_treatments_table',  (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_21_000001_add_tracking_columns_to_sends_table', (SELECT COALESCE(MAX(b.batch),0)   FROM (SELECT batch FROM migrations) b)),
   ('2026_08_22_000001_add_orders_items_id_to_payments_table', (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b)),
-  ('2026_08_22_000002_add_bank_account_to_projects_table',    (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b));
+  ('2026_08_22_000002_add_bank_account_to_projects_table',    (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b),
+  ('2026_09_12_000001_create_crm_tables',                     (SELECT COALESCE(MAX(b.batch),0) FROM (SELECT batch FROM migrations) b));
 ```
 
-Sebenarnya kedelapan migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
+Sebenarnya kesembilan migrasi itu sendiri sudah dijaga `hasColumn`/`hasTable`, jadi
 menjalankan `php artisan migrate` setelah SQL ini pun tidak akan merusak apa pun — ia hanya
 akan melewati yang sudah ada.

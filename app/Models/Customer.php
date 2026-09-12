@@ -4,8 +4,11 @@ namespace App\Models;
 
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 class Customer extends Model implements AuthenticatableContract
@@ -123,5 +126,83 @@ class Customer extends Model implements AuthenticatableContract
     public function project()
     {
         return $this->belongsTo(Project::class, 'projects_id');
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(CustomerNote::class, 'customers_id');
+    }
+
+    public function tags(): HasMany
+    {
+        return $this->hasMany(CustomerTag::class, 'customers_id');
+    }
+
+    /** Label tiap segmen, dalam urutan tampil. */
+    public const SEGMEN = [
+        'vip' => 'VIP',
+        'loyal' => 'Loyal',
+        'aktif' => 'Aktif',
+        'baru' => 'Baru',
+        'mau_hilang' => 'Mau Hilang',
+        'tidur' => 'Tidur',
+        'belum_order' => 'Belum Order',
+    ];
+
+    /**
+     * Tempelkan ringkasan belanja (alias tabel `rb`) dan segmen ke tiap pelanggan.
+     *
+     * Dihitung saat diminta, tidak disimpan: kolom yang disimpan basi begitu ada
+     * pesanan baru, dan dengan beberapa ribu pelanggan hitungannya murah.
+     * Pesanan dari SEMUA cabang dihitung — pelanggan dipakai bersama seluruh
+     * cabang, jadi segmennya pun milik pelanggan, bukan milik satu cabang.
+     *
+     * ponytail: agregat penuh tiap permintaan; simpan ke tabel ringkasan kalau
+     * pesanan sudah ratusan ribu baris.
+     */
+    public function scopeDenganRingkasanBelanja(Builder $query): Builder
+    {
+        $ringkasan = DB::table('orders')
+            ->selectRaw('customers_id, COUNT(*) AS jumlah_pesanan, SUM(total_price) AS total_belanja, '
+                .'MIN(date) AS pesanan_pertama, MAX(date) AS pesanan_terakhir')
+            ->where('is_deleted', 0)
+            ->groupBy('customers_id');
+
+        return $query
+            ->leftJoinSub($ringkasan, 'rb', 'rb.customers_id', '=', 'customers.id')
+            ->addSelect([
+                'customers.*',
+                DB::raw('COALESCE(rb.jumlah_pesanan, 0) AS jumlah_pesanan'),
+                DB::raw('COALESCE(rb.total_belanja, 0) AS total_belanja'),
+                'rb.pesanan_pertama',
+                'rb.pesanan_terakhir',
+                DB::raw(self::sqlSegmen().' AS segmen'),
+            ]);
+    }
+
+    /**
+     * Segmen sebagai ekspresi SQL atas tabel `rb`, supaya bisa dipakai untuk
+     * menyaring, mengurutkan, dan menghitung tanpa menarik semua pelanggan.
+     *
+     * Kebaruan dinilai lebih dulu: pelanggan VIP yang empat bulan tidak datang
+     * masuk "Tidur", karena yang perlu dilakukan terhadapnya adalah menyapanya
+     * kembali. Batasnya bisa diubah lewat tabel `settings`.
+     */
+    public static function sqlSegmen(): string
+    {
+        $sekarang = time();
+        $batasTidur = $sekarang - (int) Setting::read('crm_hari_tidur', 120) * 86400;
+        $batasMauHilang = $sekarang - (int) Setting::read('crm_hari_mau_hilang', 60) * 86400;
+        $minVip = (int) Setting::read('crm_min_belanja_vip', 2000000);
+        $minLoyal = (int) Setting::read('crm_min_pesanan_loyal', 5);
+
+        return "CASE
+            WHEN rb.jumlah_pesanan IS NULL THEN 'belum_order'
+            WHEN rb.pesanan_terakhir < {$batasTidur} THEN 'tidur'
+            WHEN rb.pesanan_terakhir < {$batasMauHilang} THEN 'mau_hilang'
+            WHEN rb.total_belanja >= {$minVip} THEN 'vip'
+            WHEN rb.jumlah_pesanan >= {$minLoyal} THEN 'loyal'
+            WHEN rb.jumlah_pesanan = 1 THEN 'baru'
+            ELSE 'aktif' END";
     }
 }

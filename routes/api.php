@@ -330,6 +330,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('customers/{id}/reset-pin', [CustomerController::class, 'resetPin'])
             ->middleware('role:Admin Super,Admin');
 
+        Route::get('customers/segments', [CustomerController::class, 'segments']);
+        Route::get('customers/tags', [CustomerController::class, 'tags']);
+        Route::get('customers/{id}/profile', [CustomerController::class, 'profile']);
+        // Catatan dan tag diisi tim yang mengurus pelanggan; Sosmed hanya membaca.
+        Route::middleware('role:Admin Super,Admin,Admin Crm')->group(function () {
+            Route::post('customers/{id}/notes', [CustomerController::class, 'storeNote']);
+            Route::delete('customers/{id}/notes/{noteId}', [CustomerController::class, 'destroyNote']);
+            Route::put('customers/{id}/tags', [CustomerController::class, 'syncTags']);
+        });
+
         Route::apiResource('customers', CustomerController::class);
 
         Route::prefix('broadcasts')->group(function () {

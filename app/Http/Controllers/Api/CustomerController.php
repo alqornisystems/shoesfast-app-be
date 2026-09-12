@@ -4,7 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\CustomerNote;
+use App\Models\CustomerTag;
+use App\Models\Guarantee;
+use App\Models\Order;
+use App\Models\Payment;
+use App\Models\RewardRedemption;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class CustomerController extends Controller
@@ -16,6 +24,9 @@ class CustomerController extends Controller
         'name' => 'customers.name',
         'phone' => 'customers.phone',
         'created_at' => 'customers.created_at',
+        'last_order' => 'rb.pesanan_terakhir',
+        'total_spent' => 'COALESCE(rb.total_belanja, 0)',
+        'orders_count' => 'COALESCE(rb.jumlah_pesanan, 0)',
     ];
 
     /**
@@ -27,20 +38,26 @@ class CustomerController extends Controller
         $search = $request->get('search', '');
         $isMember = $request->get('is_member');
 
-        $query = Customer::with('projects');
+        $request->validate([
+            'segment' => ['nullable', 'string', \Illuminate\Validation\Rule::in(array_keys(Customer::SEGMEN))],
+            'tag' => ['nullable', 'string', 'max:50'],
+        ]);
 
-        // Filter berdasarkan cabang:
-        // - Customer yang terdaftar di cabang ini, ATAU
-        // - Customer yang tidak punya cabang sama sekali (tampil di semua cabang)
-        $query->where(function ($q) {
-            $q->whereHas('projects', function ($projectQuery) {
-                $projectQuery->where('projects.id', 1);
-            })->orWhereDoesntHave('projects'); // Tidak punya cabang = tampil di semua
-        });
+        $query = $this->pelangganCabang(
+            Customer::with(['projects', 'tags'])->denganRingkasanBelanja()
+        );
 
         // Filter member jika diminta
         if ($isMember !== null) {
             $query->where('is_member', (int) $isMember);
+        }
+
+        if ($request->filled('segment')) {
+            $query->whereRaw(Customer::sqlSegmen().' = ?', [$request->input('segment')]);
+        }
+
+        if ($request->filled('tag')) {
+            $query->whereHas('tags', fn ($q) => $q->where('tag', mb_strtolower(trim($request->input('tag')))));
         }
 
         // Search by name, phone, email, address, or project name
@@ -62,18 +79,263 @@ class CustomerController extends Controller
         $request->validate($this->aturanSortir(self::SORTIR_PELANGGAN));
         $this->terapkanSortir($query, $request, self::SORTIR_PELANGGAN, 'customers.id');
 
-        $customers = $query->orderBy('created_at', 'desc')
+        $customers = $query->orderBy('customers.created_at', 'desc')
             ->paginate($perPage);
 
         // Transform to include projects array
         $customers->getCollection()->transform(function ($customer) {
             $customer->project_names = $customer->projects->pluck('name')->toArray();
             $customer->project_ids = $customer->projects->pluck('id')->toArray();
+            $this->rapikanRingkasan($customer);
 
             return $customer;
         });
 
         return response()->json($customers);
+    }
+
+    /**
+     * Filter berdasarkan cabang:
+     * - Customer yang terdaftar di cabang ini, ATAU
+     * - Customer yang tidak punya cabang sama sekali (tampil di semua cabang)
+     */
+    private function pelangganCabang($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereHas('projects', function ($projectQuery) {
+                $projectQuery->where('projects.id', 1);
+            })->orWhereDoesntHave('projects'); // Tidak punya cabang = tampil di semua
+        });
+    }
+
+    /** Angka dari agregat SQL datang sebagai teks; label segmen ikut disertakan. */
+    private function rapikanRingkasan(Customer $customer): void
+    {
+        $customer->jumlah_pesanan = (int) $customer->jumlah_pesanan;
+        $customer->total_belanja = (int) $customer->total_belanja;
+        $customer->pesanan_pertama = $customer->pesanan_pertama !== null ? (int) $customer->pesanan_pertama : null;
+        $customer->pesanan_terakhir = $customer->pesanan_terakhir !== null ? (int) $customer->pesanan_terakhir : null;
+        $customer->segmen_label = Customer::SEGMEN[$customer->segmen] ?? null;
+        if ($customer->relationLoaded('tags')) {
+            $customer->setRelation('tags', $customer->tags->pluck('tag'));
+        }
+    }
+
+    /**
+     * GET /api/customers/segments — jumlah pelanggan per segmen, untuk chip
+     * saringan di daftar pelanggan.
+     */
+    public function segments()
+    {
+        $jumlah = DB::query()
+            ->fromSub($this->pelangganCabang(Customer::query()->denganRingkasanBelanja()), 'p')
+            ->selectRaw('segmen, COUNT(*) AS jumlah')
+            ->groupBy('segmen')
+            ->pluck('jumlah', 'segmen');
+
+        $data = [];
+        foreach (Customer::SEGMEN as $kunci => $label) {
+            $data[] = ['key' => $kunci, 'label' => $label, 'count' => (int) ($jumlah[$kunci] ?? 0)];
+        }
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * GET /api/customers/tags — tag yang sedang dipakai, beserta jumlah pelanggannya.
+     */
+    public function tags()
+    {
+        $data = CustomerTag::query()
+            ->join('customers', 'customers.id', '=', 'customer_tags.customers_id')
+            ->where('customers.is_deleted', 0)
+            ->selectRaw('customer_tags.tag, COUNT(*) AS count')
+            ->groupBy('customer_tags.tag')
+            ->orderBy('customer_tags.tag')
+            ->get()
+            ->map(fn ($t) => ['tag' => $t->tag, 'count' => (int) $t->count]);
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * GET /api/customers/{id}/profile — satu halaman utuh tentang pelanggan.
+     *
+     * Pesanan dari SEMUA cabang ikut, masing-masing dengan nama cabangnya:
+     * ringkasan belanja dan segmen dihitung dari seluruh cabang, dan riwayat yang
+     * lebih pendek dari angka ringkasannya hanya membingungkan.
+     */
+    public function profile(string $id)
+    {
+        $customer = Customer::with(['projects', 'tags'])
+            ->denganRingkasanBelanja()
+            ->where('customers.id', $id)
+            ->firstOrFail();
+
+        $customer->project_names = $customer->projects->pluck('name')->toArray();
+        $customer->project_ids = $customer->projects->pluck('id')->toArray();
+        $this->rapikanRingkasan($customer);
+
+        $tanpaCabang = fn ($q) => $q->withoutGlobalScope('branch');
+
+        $pesanan = Order::withoutGlobalScope('branch')
+            ->with(['project', 'items' => $tanpaCabang])
+            ->withSum(['payments as dibayar' => $tanpaCabang], 'nominal')
+            ->where('customers_id', $customer->id)
+            ->orderByDesc('date')
+            ->get();
+
+        // Rumus piutang sama dengan dashboard: pesanan Proses/Siap Diambil yang
+        // belum lunas.
+        $piutang = $pesanan
+            ->whereIn('status', [1, 2])
+            ->sum(fn ($o) => max(0, (int) $o->total_price - (int) $o->dibayar));
+
+        $idPesanan = $pesanan->pluck('id');
+        $idBarang = $pesanan->flatMap(fn ($o) => $o->items->pluck('id'));
+        $namaBarang = $pesanan->flatMap(fn ($o) => $o->items->map(fn ($i) => [$i->id, $i->name, $o->code]))
+            ->keyBy(0);
+
+        $pembayaran = Payment::withoutGlobalScope('branch')
+            ->whereIn('orders_id', $idPesanan)
+            ->orderByDesc('date')
+            ->get(['id', 'orders_id', 'date', 'nominal', 'note']);
+        $kodePesanan = $pesanan->pluck('code', 'id');
+
+        $garansi = Guarantee::withoutGlobalScope('branch')
+            ->whereIn('orders_items_id', $idBarang)
+            ->orderByDesc('created_at')
+            ->get();
+
+        $penukaran = RewardRedemption::withoutGlobalScope('branch')
+            ->with('reward')
+            ->where('customers_id', $customer->id)
+            ->orderByDesc('date')
+            ->get();
+
+        $catatan = $customer->notes()->orderByDesc('created_at')->get();
+        $penulis = User::withoutGlobalScopes()
+            ->whereIn('id', $catatan->pluck('created_by')->filter()->unique())
+            ->pluck('name', 'id');
+
+        // Nomor yang sama dipakai pelanggan lain: riwayat satu orang terpecah dua.
+        $duplikat = $customer->phone
+            ? Customer::where('phone', $customer->phone)->where('id', '!=', $customer->id)->get(['id', 'name'])
+            : collect();
+
+        return response()->json(['data' => [
+            'customer' => $customer,
+            'summary' => [
+                'orders_count' => $customer->jumlah_pesanan,
+                'total_spent' => $customer->total_belanja,
+                'avg_order' => $customer->jumlah_pesanan > 0 ? (int) round($customer->total_belanja / $customer->jumlah_pesanan) : 0,
+                'first_order_at' => $customer->pesanan_pertama,
+                'last_order_at' => $customer->pesanan_terakhir,
+                'receivable' => (int) $piutang,
+                'points' => (int) $customer->points,
+                'segment' => $customer->segmen,
+                'segment_label' => $customer->segmen_label,
+            ],
+            'orders' => $pesanan->map(fn ($o) => [
+                'id' => $o->id,
+                'code' => $o->code,
+                'date' => $o->date,
+                'status' => $o->status,
+                'total_price' => (int) $o->total_price,
+                'paid' => (int) $o->dibayar,
+                'branch_name' => $o->project?->name,
+                'items' => $o->items->map(fn ($i) => ['id' => $i->id, 'name' => $i->name, 'status' => $i->status])->values(),
+            ])->values(),
+            'payments' => $pembayaran->map(fn ($p) => [
+                'id' => $p->id,
+                'order_code' => $kodePesanan[$p->orders_id] ?? null,
+                'date' => $p->date,
+                'nominal' => (int) $p->nominal,
+                'note' => $p->note,
+            ])->values(),
+            'guarantees' => $garansi->map(fn ($g) => [
+                'id' => $g->id,
+                'item_name' => $namaBarang[$g->orders_items_id][1] ?? null,
+                'order_code' => $namaBarang[$g->orders_items_id][2] ?? null,
+                'note' => $g->note,
+                'status' => $g->status,
+                'status_label' => GuaranteeClaimController::STATUS_LABELS[$g->status] ?? 'Tidak diketahui',
+                'created_at' => $g->created_at,
+            ])->values(),
+            'redemptions' => $penukaran->map(fn ($r) => [
+                'id' => $r->id,
+                'reward_name' => $r->reward?->name,
+                'points_spent' => (int) $r->points_spent,
+                'status_label' => $r->status === 1 ? 'Sudah diambil' : 'Menunggu diambil',
+                'date' => $r->date,
+            ])->values(),
+            'notes' => $catatan->map(fn ($n) => [
+                'id' => $n->id,
+                'note' => $n->note,
+                'author' => $penulis[$n->created_by] ?? null,
+                'created_at' => $n->created_at,
+            ])->values(),
+            'duplicates' => $duplikat,
+        ]]);
+    }
+
+    /** POST /api/customers/{id}/notes */
+    public function storeNote(Request $request, string $id)
+    {
+        $customer = Customer::findOrFail($id);
+        $validated = $request->validate(['note' => ['required', 'string', 'max:2000']]);
+
+        $note = $customer->notes()->create([
+            'note' => trim($validated['note']),
+            'created_by' => auth()->id(),
+        ]);
+
+        return response()->json(['data' => [
+            'id' => $note->id,
+            'note' => $note->note,
+            'author' => auth()->user()?->name,
+            'created_at' => $note->created_at,
+        ]], 201);
+    }
+
+    /** DELETE /api/customers/{id}/notes/{noteId} */
+    public function destroyNote(string $id, string $noteId)
+    {
+        $note = CustomerNote::where('customers_id', $id)->findOrFail($noteId);
+        $note->update(['is_deleted' => 1, 'modified_by' => auth()->id()]);
+
+        return response()->json(['message' => 'Catatan dihapus']);
+    }
+
+    /**
+     * PUT /api/customers/{id}/tags — ganti seluruh tag pelanggan.
+     *
+     * Tag disimpan huruf kecil supaya "Reseller" dan "reseller" tidak menjadi
+     * dua saringan berbeda.
+     */
+    public function syncTags(Request $request, string $id)
+    {
+        $customer = Customer::findOrFail($id);
+        $validated = $request->validate([
+            'tags' => ['present', 'array', 'max:20'],
+            'tags.*' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $tags = collect($validated['tags'])
+            ->map(fn ($t) => mb_strtolower(trim(preg_replace('/\s+/', ' ', (string) $t))))
+            ->filter()
+            ->unique()
+            ->values();
+
+        DB::transaction(function () use ($customer, $tags) {
+            $customer->tags()->whereNotIn('tag', $tags)->delete();
+            $ada = $customer->tags()->pluck('tag');
+            foreach ($tags->diff($ada) as $tag) {
+                $customer->tags()->create(['tag' => $tag, 'created_by' => auth()->id()]);
+            }
+        });
+
+        return response()->json(['data' => $tags]);
     }
 
     /**

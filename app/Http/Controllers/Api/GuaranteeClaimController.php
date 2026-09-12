@@ -20,7 +20,7 @@ class GuaranteeClaimController extends Controller
         'status' => 'guarantees.status',
     ];
 
-    private const STATUS_LABELS = [
+    public const STATUS_LABELS = [
         0 => 'Menunggu ditinjau',
         1 => 'Disetujui',
         2 => 'Ditolak',

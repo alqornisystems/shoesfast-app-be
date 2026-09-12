@@ -19,6 +19,7 @@ trait CreatesCustomerSchema
             'orders', 'orders_items', 'services',
             'treatments', 'payments', 'sends', 'guarantees', 'rewards',
             'reward_redemptions', 'settings', 'personal_access_tokens',
+            'customer_project', 'customer_notes', 'customer_tags',
         ];
 
         foreach ($tables as $table) {
@@ -309,6 +310,32 @@ trait CreatesCustomerSchema
             $t->string('key')->unique();
             $t->text('value')->nullable();
             $t->timestamps();
+        });
+
+        Schema::create('customer_project', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('customers_id');
+            $t->integer('projects_id');
+        });
+
+        Schema::create('customer_notes', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('customers_id');
+            $t->text('note');
+            $t->integer('is_deleted')->default(0);
+            $t->integer('created_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->integer('modified_at')->nullable();
+            $t->integer('modified_by')->nullable();
+        });
+
+        Schema::create('customer_tags', function (Blueprint $t) {
+            $t->increments('id');
+            $t->integer('customers_id');
+            $t->string('tag', 50);
+            $t->integer('created_at')->nullable();
+            $t->integer('created_by')->nullable();
+            $t->unique(['customers_id', 'tag']);
         });
 
         Schema::create('personal_access_tokens', function (Blueprint $t) {
