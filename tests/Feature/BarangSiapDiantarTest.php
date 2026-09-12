@@ -353,6 +353,31 @@ class BarangSiapDiantarTest extends TestCase
             ->assertJsonPath('message', 'Pesanan barang ini sudah berstatus Selesai.');
     }
 
+    /**
+     * Barang tanpa pekerjaan tidak punya apa-apa untuk ditunggu. Begitu admin
+     * menyatakan pesanannya Siap Diambil, barangnya masuk antrean antar.
+     */
+    public function test_barang_tanpa_pekerjaan_ikut_status_siap_diambil_pesanannya(): void
+    {
+        [$item] = $this->barang(0);
+        $this->assertNotContains($item->id, $this->isiDaftarAntar(), 'Pesanan masih Proses: belum siap.');
+        $this->jadwalkanAntar($item)->assertStatus(422);
+
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['status' => 2]);
+
+        $this->assertContains($item->id, $this->isiDaftarAntar());
+        $this->jadwalkanAntar($item)->assertStatus(201);
+    }
+
+    /** Siap Diambil tidak meloloskan barang yang pekerjaannya masih terbuka. */
+    public function test_siap_diambil_tidak_meloloskan_pekerjaan_yang_masih_terbuka(): void
+    {
+        [$item] = $this->barang(1);
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['status' => 2]);
+
+        $this->assertNotContains($item->id, $this->isiDaftarAntar());
+    }
+
     /** Barang yang sudah dijadwalkan tidak boleh dapat tugas antar kedua. */
     public function test_tugas_antar_ditolak_kalau_sudah_dijadwalkan(): void
     {

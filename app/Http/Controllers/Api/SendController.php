@@ -678,7 +678,7 @@ class SendController extends Controller
                 .'Selesaikan dulu, atau selesaikan paksa kalau memang harus dikirim sekarang.';
         }
 
-        return 'Barang ini belum punya pekerjaan yang diselesaikan.';
+        return 'Barang ini belum punya pekerjaan. Ubah status pesanannya ke Siap Diambil kalau memang sudah siap dikirim.';
     }
 
     /**

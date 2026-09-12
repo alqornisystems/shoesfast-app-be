@@ -108,6 +108,8 @@ class OrderItem extends Model
      *   barangnya sudah diambil sendiri di toko, dan tidak ada kolom lain yang
      *   mencatat pengambilan itu;
      * - punya pekerjaan, dan SEMUA pekerjaannya sudah selesai (`done_at` terisi);
+     *   atau belum punya pekerjaan sama sekali tapi pesanannya sudah dinyatakan
+     *   Siap Diambil (2) oleh admin — tidak ada pekerjaan yang bisa ditunggu;
      * - belum punya tugas antar yang masih hidup — tugas yang dihapus tidak dihitung,
      *   jadi barangnya kembali ke antrean alih-alih hilang;
      * - belum sampai di tangan pelanggan (status 4).
@@ -118,6 +120,8 @@ class OrderItem extends Model
      * kacamata cabang yang sedang aktif barang itu seolah tidak punya pekerjaan
      * sama sekali. Saringan cabang tetap berlaku pada barangnya sendiri.
      */
+    public const PESANAN_SIAP_DIAMBIL = 2;
+
     public const PESANAN_SELESAI = 3;
 
     public function scopeSiapDiantar(Builder $query): Builder
@@ -126,8 +130,12 @@ class OrderItem extends Model
             ->whereHas('order', function ($q) {
                 $q->withoutGlobalScope('branch')->where('orders.status', '!=', self::PESANAN_SELESAI);
             })
-            ->whereHas('treatments', function ($q) {
-                $q->withoutGlobalScope('branch');
+            ->where(function ($q) {
+                $q->whereHas('treatments', function ($t) {
+                    $t->withoutGlobalScope('branch');
+                })->orWhereHas('order', function ($o) {
+                    $o->withoutGlobalScope('branch')->where('orders.status', self::PESANAN_SIAP_DIAMBIL);
+                });
             })
             ->whereDoesntHave('treatments', function ($q) {
                 $q->withoutGlobalScope('branch')->whereNull('done_at');
