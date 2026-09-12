@@ -562,7 +562,12 @@ class SendController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
         ], $this->aturanSortir(self::SORTIR_ANTAR)));
 
-        $query = OrderItem::with(['order.customer', 'order.project'])
+        // Pesanan dibaca tanpa saringan cabang, sama seperti syarat siapDiantar():
+        // data lama menyimpan barang di satu cabang dan pesanannya di cabang lain,
+        // dan barang itu tampil tanpa nama customer serta tidak bisa dicari.
+        $pesananLintasCabang = fn ($q) => $q->withoutGlobalScope('branch');
+
+        $query = OrderItem::with(['order' => $pesananLintasCabang, 'order.customer', 'order.project'])
             ->siapDiantar()
             ->orderBy('id', 'DESC');
 
@@ -571,11 +576,14 @@ class SendController extends Controller
             $query->where(function ($q) use ($cari) {
                 $q->where('name', 'LIKE', "%{$cari}%")
                     ->orWhereHas('order', function ($qo) use ($cari) {
-                        $qo->where('code', 'LIKE', "%{$cari}%");
-                    })
-                    ->orWhereHas('order.customer', function ($qc) use ($cari) {
-                        $qc->where('name', 'LIKE', "%{$cari}%")
-                            ->orWhere('phone', 'LIKE', "%{$cari}%");
+                        $qo->withoutGlobalScope('branch')
+                            ->where(function ($qk) use ($cari) {
+                                $qk->where('code', 'LIKE', "%{$cari}%")
+                                    ->orWhereHas('customer', function ($qc) use ($cari) {
+                                        $qc->where('name', 'LIKE', "%{$cari}%")
+                                            ->orWhere('phone', 'LIKE', "%{$cari}%");
+                                    });
+                            });
                     });
             });
         }
@@ -678,7 +686,7 @@ class SendController extends Controller
      */
     public function getAvailableDeliveryItems(Request $request)
     {
-        $items = OrderItem::with(['order.customer'])
+        $items = OrderItem::with(['order' => fn ($q) => $q->withoutGlobalScope('branch'), 'order.customer'])
             ->siapDiantar()
             ->orderBy('id', 'DESC')
             ->limit(50)

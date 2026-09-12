@@ -256,6 +256,26 @@ class BarangSiapDiantarTest extends TestCase
         $this->assertContains($item->id, $this->isiDaftarAntar());
     }
 
+    /**
+     * Pesanannya tercatat di cabang lain: barangnya tetap harus bisa dicari
+     * dengan nama customer dan kode pesanan, dan nama customer-nya tampil.
+     */
+    public function test_pencarian_menemukan_barang_yang_pesanannya_di_cabang_lain(): void
+    {
+        [$item, $treatments] = $this->barang(1);
+        $this->selesaikan($treatments[0]);
+        Order::withoutGlobalScopes()->where('id', $item->orders_id)->update(['projects_id' => 2]);
+        $kode = Order::withoutGlobalScopes()->find($item->orders_id)->code;
+
+        foreach (['Budi', $kode, '81200001111'] as $cari) {
+            $baris = collect($this->getJson('/api/sends/delivery-waiting-list?page=1&search='.$cari)
+                ->assertStatus(200)->json('data'))->firstWhere('id', $item->id);
+
+            $this->assertNotNull($baris, "Pencarian '$cari' harus menemukan barangnya.");
+            $this->assertSame('Budi', $baris['customer_name']);
+        }
+    }
+
     private function jadwalkanAntar(OrderItem $item)
     {
         // Kurir sungguhan di tabel users — `users_id` divalidasi `exists`.
