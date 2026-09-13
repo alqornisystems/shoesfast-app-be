@@ -50,7 +50,10 @@ class DashboardController extends Controller
         $newCustomersLastMonth = Customer::whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])->count();
 
         // --- Treatments currently in progress (not done = 2, not cancelled = 3) ---
-        $inProgressTreatments = Treatment::whereNotIn('status', [2, 3])->count();
+        // Pesanan yang sudah Selesai tidak dihitung, sama seperti daftar Pengerjaan.
+        $inProgressTreatments = Treatment::whereNotIn('status', [2, 3])
+            ->whereHas('orderItem.order', fn ($q) => $q->where('status', '!=', 3))
+            ->count();
 
         // --- Finance ---
         // Expenses this/last month (dated `expenses` only; operational costs have no txn date)

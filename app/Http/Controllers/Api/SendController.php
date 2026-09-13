@@ -87,6 +87,7 @@ class SendController extends Controller
         ])
             ->whereNotNull('users_id') // Only show sends with courier assigned
             ->orderBy('id', 'DESC');
+        $this->tanpaPesananSelesai($query);
 
         // Filter by type (0=pickup, 1=delivery)
         if ($request->has('type') && $request->type !== '') {
@@ -735,6 +736,7 @@ class SendController extends Controller
             'project',
         ])
             ->where('status', 0) // In progress only
+            ->where(fn ($q) => $this->tanpaPesananSelesai($q))
             // `id` sebagai pemecah seri: tanpa urutan yang stabil, dua baris bertanggal
             // sama bisa bertukar tempat antar permintaan, sehingga satu baris muncul dua
             // kali di halaman berikutnya sementara baris lain hilang sama sekali.
@@ -1622,6 +1624,19 @@ class SendController extends Controller
      * GET /api/sends/summary?date=YYYY-MM-DD
      * Rekap sehari milik kurir yang sedang login.
      */
+    /**
+     * Tugas yang pesanannya sudah Selesai tidak perlu dikerjakan lagi: tidak tampil
+     * di daftar pengiriman, Dalam Proses, maupun hitungan tugas kurir. Histori
+     * tetap menampilkannya. Pesanan dinilai tanpa saringan cabang — yang dicari
+     * status pesanan milik tugas ini, di cabang mana pun tercatat.
+     */
+    private function tanpaPesananSelesai($query)
+    {
+        return $query->whereHas('order', function ($q) {
+            $q->withoutGlobalScope('branch')->where('orders.status', '!=', 3);
+        });
+    }
+
     public function summary(Request $request)
     {
         $request->validate([
@@ -1652,7 +1667,7 @@ class SendController extends Controller
         // `failed` adalah kejadian hari itu, sedangkan ini antrean yang masih menunggu.
         // Tugas kemarin yang belum tuntas justru paling perlu terlihat hari ini; menyaringnya
         // dengan tanggal akan menyembunyikannya tepat pada saat ia menumpuk.
-        $pending = $milikSaya()
+        $pending = $this->tanpaPesananSelesai($milikSaya())
             ->where('status', Send::STATUS_BERJALAN)
             ->count();
 
