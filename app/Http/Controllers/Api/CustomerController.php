@@ -365,6 +365,7 @@ class CustomerController extends Controller
                 'status' => $o->status,
                 'total_price' => (int) $o->total_price,
                 'paid' => (int) $o->dibayar,
+                'remaining' => max(0, $o->sisaTagihan((int) $o->dibayar)),
                 'branch_name' => $o->project?->name,
                 'items' => $o->items->map(fn ($i) => ['id' => $i->id, 'name' => $i->name, 'status' => $i->status])->values(),
             ])->values(),

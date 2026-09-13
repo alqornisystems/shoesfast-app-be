@@ -1119,7 +1119,7 @@ class SendController extends Controller
         // menyerahkan barang tanpa menagih. Keadaan itu sekarang punya namanya sendiri.
         $belumBerharga = $order === null || $order->total_price === null || (int) $order->total_price === 0;
         $totalPrice = $belumBerharga ? null : (int) $order->total_price;
-        $credit = $belumBerharga ? null : $totalPrice - $totalPaid;
+        $credit = $belumBerharga ? null : $order->sisaTagihan((int) $totalPaid);
 
         return response()->json([
             'id' => $send->id,
@@ -1220,7 +1220,7 @@ class SendController extends Controller
             return [];
         }
 
-        $harga = Order::whereIn('id', $orderIds)->pluck('total_price', 'id');
+        $pesanan = Order::whereIn('id', $orderIds)->get(['id', 'total_price', 'status'])->keyBy('id');
         $terbayar = Payment::whereIn('orders_id', $orderIds)
             ->groupBy('orders_id')
             ->selectRaw('orders_id, SUM(nominal) as total')
@@ -1229,7 +1229,7 @@ class SendController extends Controller
         $hasil = [];
 
         foreach ($orderIds as $id) {
-            $totalPrice = $harga[$id] ?? null;
+            $totalPrice = $pesanan[$id]->total_price ?? null;
 
             // Harga NULL/0 bukan lunas — pesanan portal pelanggan lahir tanpa harga.
             if ($totalPrice === null || (int) $totalPrice === 0) {
@@ -1239,7 +1239,7 @@ class SendController extends Controller
             }
 
             $paid = (int) ($terbayar[$id] ?? 0);
-            $credit = (int) $totalPrice - $paid;
+            $credit = $pesanan[$id]->sisaTagihan($paid);
 
             $hasil[$id] = $credit <= 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
         }

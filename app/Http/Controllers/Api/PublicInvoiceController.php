@@ -81,7 +81,7 @@ class PublicInvoiceController extends Controller
         // so the public invoice and the payments page can never disagree.
         $dueDate = strtotime(date('Y-m-d', strtotime(date('Y-m-d', $order->date).' +3 days')));
         $totalPaid = Payment::withoutBranchScope()->where('orders_id', $order->id)->sum('nominal');
-        $credit = $order->total_price - $totalPaid;
+        $credit = $order->sisaTagihan((int) $totalPaid);
         $paymentStatus = $credit === 0 ? 'paid' : ($totalPaid > 0 ? 'partial' : 'unpaid');
 
         return response()->json([

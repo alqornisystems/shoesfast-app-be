@@ -44,42 +44,29 @@ class PaymentController extends Controller
             });
         }
 
-        // Filter by payment status
+        // Filter by payment status, satu atau beberapa sekaligus ("unpaid,partial").
+        // Pesanan Selesai dianggap lunas (Order::sisaTagihan): ikut "paid" walau
+        // pembayarannya kurang, dan tidak pernah muncul sebagai "unpaid"/"partial".
         if ($request->has('status') && $request->status !== '') {
-            $statuses = explode(',', $request->status);
+            $sudahBayar = '(SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)';
+            $selesai = Order::STATUS_SELESAI;
 
-            if (count($statuses) > 1) {
-                // Multiple statuses (e.g., "unpaid,partial")
-                $query->where(function ($q) use ($statuses) {
-                    foreach ($statuses as $status) {
-                        $status = trim($status);
-                        if ($status === 'unpaid') {
-                            $q->orWhereDoesntHave('payments');
+            $query->where(function ($q) use ($request, $sudahBayar, $selesai) {
+                foreach (array_map('trim', explode(',', $request->status)) as $status) {
+                    $q->orWhere(function ($s) use ($status, $sudahBayar, $selesai) {
+                        if ($status === 'paid') {
+                            $s->where('orders.status', $selesai)
+                                ->orWhere(fn ($x) => $x->whereRaw("total_price = {$sudahBayar}")->whereHas('payments'));
+                        } elseif ($status === 'unpaid') {
+                            $s->where('orders.status', '!=', $selesai)->whereDoesntHave('payments');
                         } elseif ($status === 'partial') {
-                            $q->orWhereRaw('total_price > (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                                ->whereHas('payments');
-                        } elseif ($status === 'paid') {
-                            $q->orWhereRaw('total_price = (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
+                            $s->where('orders.status', '!=', $selesai)
+                                ->whereRaw("total_price > {$sudahBayar}")
                                 ->whereHas('payments');
                         }
-                    }
-                });
-            } else {
-                // Single status
-                $status = $statuses[0];
-                if ($status === 'paid') {
-                    // Fully paid
-                    $query->whereRaw('total_price = (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                        ->whereHas('payments');
-                } elseif ($status === 'unpaid') {
-                    // No payment yet
-                    $query->whereDoesntHave('payments');
-                } elseif ($status === 'partial') {
-                    // Partial payment (has payment but not full)
-                    $query->whereRaw('total_price > (SELECT COALESCE(SUM(nominal), 0) FROM payments WHERE orders_id = orders.id AND is_deleted = 0)')
-                        ->whereHas('payments');
+                    });
                 }
-            }
+            });
         }
 
         $perPage = $request->get('per_page', 15);
@@ -99,7 +86,7 @@ class PaymentController extends Controller
             $payment = Payment::where('orders_id', $order->id)
                 ->orderBy('date', 'DESC')
                 ->first();
-            $credit = $order->total_price - $totalPaid;
+            $credit = $order->sisaTagihan((int) $totalPaid);
 
             // Calculate late days (only if unpaid and past due)
             $late = '-';
@@ -314,6 +301,8 @@ class PaymentController extends Controller
 
         $orders = Order::with(['customer'])
             ->where('total_price', '>', 0)
+            // Pesanan Selesai dianggap lunas, jadi tidak ditawarkan untuk dibayar.
+            ->where('status', '!=', Order::STATUS_SELESAI)
             ->where(function ($q) use ($search) {
                 if ($search) {
                     $q->where('code', 'LIKE', "%{$search}%")

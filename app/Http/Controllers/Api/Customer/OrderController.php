@@ -235,7 +235,7 @@ class OrderController extends Controller
             'total_paid' => $totalPaid,
             'credit' => $order->total_price === null || (int) $order->total_price === 0
                 ? null
-                : (int) $order->total_price - $totalPaid,
+                : $order->sisaTagihan($totalPaid),
             'pickup_address' => $order->pickup_address,
             'pickup_maps' => $order->pickup_maps,
             'items' => $items->map(fn (OrderItem $item) => $this->presentItem($item, $order, $progress))->values(),
@@ -542,7 +542,7 @@ class OrderController extends Controller
         // credit ikut 0, dan pesanan yang belum ditagih dilaporkan LUNAS.
         $belumBerharga = $order->total_price === null || (int) $order->total_price === 0;
         $totalPrice = $belumBerharga ? null : (int) $order->total_price;
-        $credit = $belumBerharga ? null : $totalPrice - $totalPaid;
+        $credit = $belumBerharga ? null : $order->sisaTagihan($totalPaid);
 
         // Disalin dari PaymentController::index dan PublicInvoiceController
         // supaya ketiganya tidak pernah berbeda angka untuk pesanan yang sama.

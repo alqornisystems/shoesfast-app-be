@@ -50,6 +50,21 @@ class Order extends Model
 
     const UPDATED_AT = 'modified_at';
 
+    public const STATUS_SELESAI = 3;
+
+    /**
+     * Sisa tagihan pesanan ini, diberi jumlah yang sudah dibayar.
+     *
+     * Pesanan Selesai dianggap lunas: yang belum terbayar tidak lagi ditagih
+     * (keputusan pemilik, 13 Sep 2026). Tidak ada pembayaran yang dibuat, jadi
+     * laporan kas tetap hanya berisi uang yang benar-benar masuk — yang berubah
+     * hanya apa yang ditagih dan ditampilkan sebagai "Lunas".
+     */
+    public function sisaTagihan(int $dibayar): int
+    {
+        return (int) $this->status === self::STATUS_SELESAI ? 0 : (int) $this->total_price - $dibayar;
+    }
+
     /**
      * Boot method to add global scope
      */
