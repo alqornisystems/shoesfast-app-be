@@ -142,6 +142,128 @@ class CustomerController extends Controller
     }
 
     /**
+     * GET /api/customers/dashboard — ringkasan CRM untuk halaman Dashboard CRM.
+     *
+     * Semua angka turunan dari pesanan, memakai definisi segmen yang sama dengan
+     * daftar pelanggan, jadi angka di dashboard dan jumlah di chip segmen tidak
+     * pernah berselisih.
+     */
+    public function dashboard()
+    {
+        $pelanggan = fn () => $this->pelangganCabang(Customer::query()->denganRingkasanBelanja());
+        $awalBulan = strtotime(date('Y-m-01'));
+
+        $ringkas = DB::query()->fromSub($pelanggan(), 'p')
+            ->selectRaw('COUNT(*) AS total')
+            ->selectRaw('SUM(CASE WHEN jumlah_pesanan > 0 THEN 1 ELSE 0 END) AS pernah_order')
+            ->selectRaw('SUM(CASE WHEN jumlah_pesanan >= 2 THEN 1 ELSE 0 END) AS repeat_order')
+            ->selectRaw("SUM(CASE WHEN segmen IN ('vip', 'loyal', 'aktif', 'baru') THEN 1 ELSE 0 END) AS aktif")
+            ->selectRaw('SUM(CASE WHEN pesanan_pertama >= ? THEN 1 ELSE 0 END) AS baru_bulan_ini', [$awalBulan])
+            ->selectRaw('COALESCE(SUM(total_belanja), 0) AS omzet')
+            ->first();
+
+        $perSegmen = DB::query()->fromSub($pelanggan(), 'p')
+            ->selectRaw('segmen, COUNT(*) AS jumlah, COALESCE(SUM(total_belanja), 0) AS belanja')
+            ->groupBy('segmen')
+            ->get()
+            ->keyBy('segmen');
+
+        $baris = fn ($c) => [
+            'id' => $c->id,
+            'name' => $c->name,
+            'phone' => $c->phone,
+            'orders_count' => (int) $c->jumlah_pesanan,
+            'total_spent' => (int) $c->total_belanja,
+            'last_order_at' => $c->pesanan_terakhir !== null ? (int) $c->pesanan_terakhir : null,
+            'segment' => $c->segmen,
+        ];
+
+        $teratas = $pelanggan()
+            ->orderByDesc(DB::raw('COALESCE(rb.total_belanja, 0)'))
+            ->limit(10)
+            ->get()
+            ->map($baris);
+
+        $perluDisapa = $pelanggan()
+            ->whereRaw(Customer::sqlSegmen().' = ?', ['mau_hilang'])
+            ->orderByDesc(DB::raw('COALESCE(rb.total_belanja, 0)'))
+            ->limit(10)
+            ->get()
+            ->map($baris);
+
+        return response()->json(['data' => [
+            'summary' => [
+                'total' => (int) $ringkas->total,
+                'ordered' => (int) $ringkas->pernah_order,
+                'active' => (int) $ringkas->aktif,
+                'new_this_month' => (int) $ringkas->baru_bulan_ini,
+                'repeat_rate' => $ringkas->pernah_order > 0
+                    ? round($ringkas->repeat_order / $ringkas->pernah_order * 100, 1)
+                    : 0,
+                'avg_spent' => $ringkas->pernah_order > 0
+                    ? (int) round($ringkas->omzet / $ringkas->pernah_order)
+                    : 0,
+            ],
+            'segments' => collect(Customer::SEGMEN)->map(fn ($label, $kunci) => [
+                'key' => $kunci,
+                'label' => $label,
+                'count' => (int) ($perSegmen[$kunci]->jumlah ?? 0),
+                'spent' => (int) ($perSegmen[$kunci]->belanja ?? 0),
+            ])->values(),
+            'monthly' => $this->pelangganPerBulan(),
+            // Untuk teks penjelasan segmen di dashboard.
+            'rules' => Customer::batasSegmen(),
+            'top_customers' => $teratas,
+            'at_risk' => $perluDisapa,
+        ]]);
+    }
+
+    /**
+     * Pelanggan yang order per bulan selama 12 bulan terakhir, dipisah menjadi
+     * yang baru (order pertamanya di bulan itu) dan yang kembali.
+     *
+     * Dihitung di PHP, bukan dengan fungsi tanggal SQL, supaya sama di MariaDB
+     * produksi dan SQLite pengujian. ponytail: menarik semua pesanan 12 bulan
+     * dan tanggal order pertama tiap pelanggan; pindah ke GROUP BY bulan di SQL
+     * kalau pesanan setahun sudah puluhan ribu.
+     */
+    private function pelangganPerBulan(): array
+    {
+        $awal = strtotime(date('Y-m-01', strtotime('-11 months', strtotime(date('Y-m-01')))));
+
+        $orderPertama = DB::table('orders')
+            ->where('is_deleted', 0)
+            ->groupBy('customers_id')
+            ->selectRaw('customers_id, MIN(date) AS pertama')
+            ->pluck('pertama', 'customers_id');
+
+        $bulan = [];
+        for ($t = $awal; $t <= time(); $t = strtotime('+1 month', $t)) {
+            $bulan[date('Y-m', $t)] = ['baru' => [], 'kembali' => []];
+        }
+
+        DB::table('orders')
+            ->where('is_deleted', 0)
+            ->where('date', '>=', $awal)
+            ->orderBy('id')
+            ->select(['customers_id', 'date'])
+            ->each(function ($o) use (&$bulan, $orderPertama) {
+                $kunci = date('Y-m', (int) $o->date);
+                if (! isset($bulan[$kunci])) {
+                    return;
+                }
+                $jenis = date('Y-m', (int) ($orderPertama[$o->customers_id] ?? $o->date)) === $kunci ? 'baru' : 'kembali';
+                $bulan[$kunci][$jenis][$o->customers_id] = true;
+            });
+
+        return collect($bulan)->map(fn ($b, $kunci) => [
+            'month' => $kunci,
+            'new' => count($b['baru']),
+            'returning' => count($b['kembali']),
+        ])->values()->all();
+    }
+
+    /**
      * GET /api/customers/tags — tag yang sedang dipakai, beserta jumlah pelanggannya.
      */
     public function tags()

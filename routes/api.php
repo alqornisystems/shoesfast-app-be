@@ -332,6 +332,7 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('role:Admin Super,Admin');
 
         Route::get('customers/segments', [CustomerController::class, 'segments']);
+        Route::get('customers/dashboard', [CustomerController::class, 'dashboard']);
         Route::get('customers/tags', [CustomerController::class, 'tags']);
         Route::get('customers/{id}/profile', [CustomerController::class, 'profile']);
         // Catatan dan tag diisi tim yang mengurus pelanggan; Sosmed hanya membaca.

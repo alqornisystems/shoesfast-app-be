@@ -193,6 +193,23 @@ class Customer extends Model implements AuthenticatableContract
     }
 
     /**
+     * Batas segmen yang sedang berlaku. Satu sumber untuk rumus segmen dan untuk
+     * teks penjelasan di Dashboard CRM, supaya keterangannya tidak basi saat
+     * batasnya diubah lewat `settings`.
+     *
+     * @return array{days_at_risk: int, days_dormant: int, min_spent_vip: int, min_orders_loyal: int}
+     */
+    public static function batasSegmen(): array
+    {
+        return [
+            'days_at_risk' => (int) Setting::read('crm_hari_mau_hilang', 60),
+            'days_dormant' => (int) Setting::read('crm_hari_tidur', 120),
+            'min_spent_vip' => (int) Setting::read('crm_min_belanja_vip', 2000000),
+            'min_orders_loyal' => (int) Setting::read('crm_min_pesanan_loyal', 5),
+        ];
+    }
+
+    /**
      * Segmen sebagai ekspresi SQL atas tabel `rb`, supaya bisa dipakai untuk
      * menyaring, mengurutkan, dan menghitung tanpa menarik semua pelanggan.
      *
@@ -202,11 +219,12 @@ class Customer extends Model implements AuthenticatableContract
      */
     public static function sqlSegmen(): string
     {
+        $batas = self::batasSegmen();
         $sekarang = time();
-        $batasTidur = $sekarang - (int) Setting::read('crm_hari_tidur', 120) * 86400;
-        $batasMauHilang = $sekarang - (int) Setting::read('crm_hari_mau_hilang', 60) * 86400;
-        $minVip = (int) Setting::read('crm_min_belanja_vip', 2000000);
-        $minLoyal = (int) Setting::read('crm_min_pesanan_loyal', 5);
+        $batasTidur = $sekarang - $batas['days_dormant'] * 86400;
+        $batasMauHilang = $sekarang - $batas['days_at_risk'] * 86400;
+        $minVip = $batas['min_spent_vip'];
+        $minLoyal = $batas['min_orders_loyal'];
 
         return "CASE
             WHEN rb.jumlah_pesanan IS NULL THEN 'belum_order'

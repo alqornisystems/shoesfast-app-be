@@ -66,4 +66,13 @@ class Setting extends Model
             static::$cache[$key] = $value;
         }
     }
+
+    /**
+     * Lupakan cache per-proses. Dipakai tiap awal tes: tanpa ini nilai yang ditulis
+     * satu tes terbawa ke tes berikutnya dalam proses PHP yang sama.
+     */
+    public static function flushCache(): void
+    {
+        static::$cache = null;
+    }
 }

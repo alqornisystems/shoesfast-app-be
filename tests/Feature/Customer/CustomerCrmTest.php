@@ -156,6 +156,41 @@ class CustomerCrmTest extends TestCase
         $this->assertCount(1, $data['payments']);
     }
 
+    public function test_dashboard_meringkas_pelanggan_dan_segmennya(): void
+    {
+        $baru = $this->pelanggan('Baru');
+        $this->pesanan($baru, 0, 100000);
+        $kembali = $this->pelanggan('Kembali', '81299990001');
+        $this->pesanan($kembali, 400, 300000);
+        $this->pesanan($kembali, 0, 300000);
+        $hilang = $this->pelanggan('Hilang', '81299990002');
+        $this->pesanan($hilang, 90, 5000000);
+        $this->pelanggan('Belum', '81299990003');
+
+        $d = $this->getJson('/api/customers/dashboard')->assertStatus(200)->json('data');
+
+        $this->assertSame(4, $d['summary']['total']);
+        $this->assertSame(3, $d['summary']['ordered']);
+        $this->assertSame(2, $d['summary']['active']);
+        $this->assertEquals(33.3, $d['summary']['repeat_rate']);
+        $this->assertSame(1, collect($d['segments'])->firstWhere('key', 'mau_hilang')['count']);
+        $this->assertSame(5000000, collect($d['segments'])->firstWhere('key', 'mau_hilang')['spent']);
+        $this->assertSame($hilang->id, $d['top_customers'][0]['id']);
+        $this->assertSame([$hilang->id], array_column($d['at_risk'], 'id'));
+
+        // Bulan ini: satu pelanggan baru, satu yang kembali (order pertamanya 400 hari lalu).
+        $bulanIni = collect($d['monthly'])->firstWhere('month', date('Y-m'));
+        $this->assertSame(1, $bulanIni['new']);
+        $this->assertSame(1, $bulanIni['returning']);
+        $this->assertCount(12, $d['monthly']);
+
+        // Batas yang dipakai rumus ikut dikirim untuk teks penjelasan.
+        $this->assertSame(
+            ['days_at_risk' => 60, 'days_dormant' => 120, 'min_spent_vip' => 2000000, 'min_orders_loyal' => 5],
+            $d['rules'],
+        );
+    }
+
     /** Bawaan Laravel memotong timestamp jadi tahunnya saja (`2024`) di JSON. */
     public function test_waktu_daftar_dikirim_sebagai_detik_unix(): void
     {
