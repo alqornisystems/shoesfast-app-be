@@ -138,8 +138,19 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Revoke previous tokens and issue a new expiring one
-        $user->tokens()->delete();
+        // Token perangkat LAIN tidak dicabut di sini.
+        //
+        // Dulu baris ini `$user->tokens()->delete()`: satu akun yang dipakai di
+        // komputer kantor dan di HP — atau dipakai dua orang, yang biasa terjadi
+        // pada akun admin — membuat setiap login mematikan sesi semua perangkat
+        // lain seketika. Dari sisi orang yang sedang bekerja, layarnya tiba-tiba
+        // kembali ke halaman login tanpa sebab yang kelihatan.
+        //
+        // Yang dibersihkan hanya token yang MEMANG sudah kedaluwarsa, supaya
+        // tabelnya tetap terbatas tanpa mengusir siapa pun. Pencabutan menyeluruh
+        // tetap ada di tempat yang memang memintanya: ganti kata sandi dan reset
+        // kata sandi oleh admin.
+        $this->pruneExpiredTokens($user);
 
         $remember = (bool) $request->input('remember_me');
         [$token, $expiresAt] = $this->issueToken($user, $remember);
@@ -179,10 +190,23 @@ class AuthController extends Controller
         // Pertahankan tipe sesi (remember atau tidak) dari token saat ini
         $remember = str_contains((string) ($current->name ?? ''), 'remember');
 
-        // Cabut hanya token saat ini (device lain tetap login)
-        $current->delete();
-
         [$token, $expiresAt] = $this->issueToken($user, $remember);
+
+        // Token lama diberi masa tenggang pendek, BUKAN dihapus seketika.
+        //
+        // Klien baru memegang token barunya setelah balasan ini sampai di sana.
+        // Selama perjalanan itu — dan pada setiap permintaan yang sudah di jalan
+        // sebelum penukaran dimulai, termasuk dari tab lain yang punya pollingnya
+        // sendiri — yang terkirim masih token lama. Menghapusnya di sini membuat
+        // permintaan-permintaan itu dijawab 401, dan 401 di klien berarti logout.
+        // Itu persis gejala "tiba-tiba keluar sendiri" yang dilaporkan.
+        //
+        // Tenggangnya juga menutup kasus balasan yang tidak pernah sampai (jaringan
+        // putus di tengah): klien masih punya token yang hidup untuk mencoba lagi,
+        // bukan token yang sudah mati di server.
+        $current->forceFill(['expires_at' => now()->addMinutes(self::REFRESH_GRACE_MINUTES)])->save();
+
+        $this->pruneExpiredTokens($user);
 
         return response()->json([
             'message' => 'Token diperbarui.',
@@ -192,15 +216,36 @@ class AuthController extends Controller
     }
 
     /**
+     * Masa tenggang token lama setelah ditukar lewat /auth/refresh. Cukup untuk
+     * permintaan yang sedang di jalan dan satu kali coba lagi, tidak lebih.
+     */
+    private const REFRESH_GRACE_MINUTES = 2;
+
+    /**
+     * Buang token milik pengguna ini yang sudah kedaluwarsa. Token tanpa expiry
+     * (data lama, sebelum token ber-expiry dipakai) tidak disentuh — menghapusnya
+     * di sini berarti mengusir sesi yang masih sah.
+     */
+    private function pruneExpiredTokens(User $user): void
+    {
+        $user->tokens()
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<', now())
+            ->delete();
+    }
+
+    /**
      * Terbitkan token akses ber-expiry.
      *
      * @return array{0: string, 1: \Illuminate\Support\Carbon}
      */
     private function issueToken(User $user, bool $remember): array
     {
-        $ttl = $remember
-            ? (int) config('sanctum.remember_token_ttl', 43200)
-            : (int) config('sanctum.token_ttl', 1440);
+        // Tanpa angka cadangan di sini. Dua tempat yang menyimpan angka yang sama
+        // berarti suatu hari nanti hanya satu dari keduanya yang diubah, dan yang
+        // tertinggal akan menang justru di keadaan yang paling sulit ditebak.
+        // Angkanya tinggal di config/sanctum.php.
+        $ttl = (int) config($remember ? 'sanctum.remember_token_ttl' : 'sanctum.token_ttl');
 
         $expiresAt = now()->addMinutes($ttl);
         $tokenName = $remember ? 'web-admin-remember' : 'web-admin';

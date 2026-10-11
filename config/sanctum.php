@@ -58,10 +58,23 @@ return [
     | token. AuthController menetapkan expiry per token: TTL normal vs TTL
     | "remember me". Diperbarui saat client memanggil endpoint refresh.
     |
+    | Angkanya DITULIS DI SINI, tanpa env(). Dulu keduanya env() — dan .env
+    | produksi dikelola manual di server, tidak ikut git, tidak ikut deploy FTP.
+    | Artinya satu baris basi di berkas yang tidak bisa dilihat siapa pun dari
+    | repo ini bisa diam-diam mengalahkan angka yang sudah disepakati, dan
+    | gejalanya cuma "kok saya logout terus" tanpa satu pun galat di log.
+    |
+    | Umur sesi juga bukan beda antar lingkungan: ia janji produk yang tertulis
+    | di halaman login ("Ingat saya selama 3 hari"). Satu tempat untuk
+    | mengubahnya, dan tempat itu ikut terkirim sendiri saat deploy.
+    |
+    | Pasangannya ada di tests/Feature/SesiTokenTest.php — mengubah angka di
+    | sini tanpa mengubah tulisan di halaman login membuat test itu gagal.
+    |
     */
 
-    'token_ttl' => (int) env('SANCTUM_TOKEN_TTL', 1440),               // 1 hari
-    'remember_token_ttl' => (int) env('SANCTUM_REMEMBER_TOKEN_TTL', 43200), // 30 hari
+    'token_ttl' => 1440,          // 1 hari
+    'remember_token_ttl' => 4320, // 3 hari, sesuai tulisan di halaman login
 
     /*
     |--------------------------------------------------------------------------
