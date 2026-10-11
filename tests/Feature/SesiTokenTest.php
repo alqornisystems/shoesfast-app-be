@@ -182,7 +182,7 @@ class SesiTokenTest extends TestCase
 
     /**
      * Angka yang dijanjikan ke orangnya. Tulisan di halaman login berbunyi
-     * "Ingat saya selama 3 hari", dan tulisan yang tidak sama dengan umur
+     * "Ingat saya selama 30 hari", dan tulisan yang tidak sama dengan umur
      * tokennya adalah cara paling pasti membuat orang mengira aplikasinya
      * mengeluarkan dia tanpa sebab.
      */
@@ -209,8 +209,8 @@ class SesiTokenTest extends TestCase
             'Tanpa centang, token harus berumur 1 hari.',
         );
         $this->assertTrue(
-            now()->addDays(3)->diffInMinutes($ingatSaya, true) <= 1,
-            'Dengan "Ingat saya", token harus berumur 3 hari — sama dengan tulisan di halaman login.',
+            now()->addDays(30)->diffInMinutes($ingatSaya, true) <= 1,
+            'Dengan "Ingat saya", token harus berumur 30 hari — sama dengan tulisan di halaman login.',
         );
     }
 

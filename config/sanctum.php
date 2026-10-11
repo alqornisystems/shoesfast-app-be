@@ -65,7 +65,7 @@ return [
     | gejalanya cuma "kok saya logout terus" tanpa satu pun galat di log.
     |
     | Umur sesi juga bukan beda antar lingkungan: ia janji produk yang tertulis
-    | di halaman login ("Ingat saya selama 3 hari"). Satu tempat untuk
+    | di halaman login ("Ingat saya selama 30 hari"). Satu tempat untuk
     | mengubahnya, dan tempat itu ikut terkirim sendiri saat deploy.
     |
     | Pasangannya ada di tests/Feature/SesiTokenTest.php — mengubah angka di
@@ -74,7 +74,7 @@ return [
     */
 
     'token_ttl' => 1440,          // 1 hari
-    'remember_token_ttl' => 4320, // 3 hari, sesuai tulisan di halaman login
+    'remember_token_ttl' => 43200, // 30 hari, sesuai tulisan di halaman login
 
     /*
     |--------------------------------------------------------------------------
