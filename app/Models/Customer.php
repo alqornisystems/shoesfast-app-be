@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\MapsPoint;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Builder;
@@ -89,6 +90,41 @@ class Customer extends Model implements AuthenticatableContract
 
         static::addGlobalScope('notDeleted', function ($query) {
             $query->where('is_deleted', 0);
+        });
+
+        /*
+         * `maps` yang dipegang manusia; `latitude`/`longitude` turunannya.
+         *
+         * Diletakkan di model, bukan di controller, karena ada lima jalur tulis
+         * ke kolom ini hari ini — admin store, admin update, endpoint titik,
+         * portal profil, portal register — dan jalur keenam nanti akan ikut
+         * benar tanpa ada yang perlu mengingatnya.
+         *
+         * Urutan menangnya: URL yang bisa diparse selalu menang. Kalau URL
+         * kosong atau tidak memuat titik, angka yang dikirim eksplisit pada
+         * simpanan yang sama dihormati — itu jalur portal pelanggan, yang
+         * mengirim koordinat tanpa bersandar pada URL. Kalau tidak ada
+         * keduanya, koordinat dikosongkan: titik basi yang menunjuk rumah lama
+         * terlihat sah dan justru menyesatkan kurir.
+         */
+        static::saving(function (self $pelanggan) {
+            if (! $pelanggan->isDirty('maps')) {
+                return;
+            }
+
+            $titik = MapsPoint::fromUrl($pelanggan->maps);
+
+            if ($titik !== null) {
+                $pelanggan->latitude = $titik['latitude'];
+                $pelanggan->longitude = $titik['longitude'];
+
+                return;
+            }
+
+            if (! $pelanggan->isDirty('latitude') && ! $pelanggan->isDirty('longitude')) {
+                $pelanggan->latitude = null;
+                $pelanggan->longitude = null;
+            }
         });
     }
 
