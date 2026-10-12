@@ -280,6 +280,49 @@ ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `updated_at` = NOW();
 
 ---
 
+## 11. Panen koordinat dari URL maps pelanggan
+
+Setara migrasi `2026_10_12_000001_backfill_customer_point`.
+
+Bukan perubahan skema — ini memindahkan data yang sudah ada ke kolom yang sudah ada.
+`customers.maps` menyimpan URL Google Maps, dan 3.913 dari 3.916 URL itu memuat
+koordinatnya di bagian `@lintang,bujur`. Kolom `latitude`/`longitude` sendiri terisi
+hanya pada 1 dari 4.664 baris, karena tidak ada satu pun jalur tulis yang pernah
+mengisinya. Tanpa panen ini, peta titik pelanggan di halaman pembuatan tugas kurir
+kosong untuk semua pelanggan lama.
+
+Hanya menyentuh baris yang koordinatnya masih `NULL`, jadi aman dijalankan berulang dan
+tidak pernah menimpa titik yang sudah benar. Di lokal, panen ini menaikkan jumlah
+pelanggan bertitik dari 1 menjadi 3.913.
+
+**Lebih baik jalankan `php artisan migrate`.** Versi PHP-nya memakai
+`App\Support\MapsPoint`, yang menolak koordinat di luar rentang dan menolak `0,0`.
+SQL di bawah tidak punya penolakan itu di langkah pertama — karena itu ada langkah
+kedua yang membersihkannya. Jangan jalankan yang pertama tanpa yang kedua.
+
+```sql
+-- Langkah 1: panen.
+UPDATE `customers`
+SET
+  `latitude`  = CAST(REGEXP_SUBSTR(`maps`, '(?<=@)-?[0-9]+\\.?[0-9]*') AS DECIMAL(10,8)),
+  `longitude` = CAST(REGEXP_SUBSTR(`maps`, '(?<=@-?[0-9]{1,3}\\.?[0-9]*,)-?[0-9]+\\.?[0-9]*') AS DECIMAL(11,8))
+WHERE `latitude` IS NULL
+  AND `maps` IS NOT NULL AND `maps` <> ''
+  AND `maps` REGEXP '@-?[0-9]+\\.?[0-9]*,-?[0-9]+\\.?[0-9]*';
+
+-- Langkah 2: buang hasil yang tidak masuk akal, menyamakan perilakunya dengan
+-- MapsPoint. WAJIB dijalankan sesudah langkah 1.
+UPDATE `customers`
+SET `latitude` = NULL, `longitude` = NULL
+WHERE (`latitude` = 0 AND `longitude` = 0)
+   OR `latitude`  NOT BETWEEN -90 AND 90
+   OR `longitude` NOT BETWEEN -180 AND 180;
+
+-- Periksa hasilnya. `ada_titik` harus jauh lebih besar dari sebelumnya.
+SELECT COUNT(*) AS total, SUM(`latitude` IS NOT NULL) AS ada_titik
+FROM `customers` WHERE `is_deleted` = 0;
+```
+
 ## Setelah dijalankan
 
 Periksa hasilnya:
