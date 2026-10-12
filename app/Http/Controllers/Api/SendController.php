@@ -515,6 +515,17 @@ class SendController extends Controller
                 'customer_phone' => $order->customer->phone ?? null,
                 'customer_address' => $order->customer->address ?? null,
                 'customer_maps' => $order->customer->maps ?? null,
+                // `customer_id` dipakai halaman admin untuk menyimpan titik yang
+                // baru ditaruh. Koordinat dikirim sebagai ANGKA — klien tidak
+                // boleh mem-parse URL sendiri, karena parser yang sama lalu
+                // hidup di tiga tempat dan menyimpang pelan-pelan.
+                'customer_id' => $order->customer?->id,
+                'customer_latitude' => $order->customer?->latitude === null
+                    ? null
+                    : (float) $order->customer?->latitude,
+                'customer_longitude' => $order->customer?->longitude === null
+                    ? null
+                    : (float) $order->customer?->longitude,
                 'branch_name' => $order->project->name ?? null,
                 'total_price' => $order->total_price,
                 'created_at' => $order->created_at,
@@ -546,6 +557,17 @@ class SendController extends Controller
                 'customer_phone' => $order->customer->phone,
                 'customer_address' => $order->customer->address,
                 'customer_maps' => $order->customer->maps,
+                // `customer_id` dipakai halaman admin untuk menyimpan titik yang
+                // baru ditaruh. Koordinat dikirim sebagai ANGKA — klien tidak
+                // boleh mem-parse URL sendiri, karena parser yang sama lalu
+                // hidup di tiga tempat dan menyimpang pelan-pelan.
+                'customer_id' => $order->customer->id,
+                'customer_latitude' => $order->customer->latitude === null
+                    ? null
+                    : (float) $order->customer->latitude,
+                'customer_longitude' => $order->customer->longitude === null
+                    ? null
+                    : (float) $order->customer->longitude,
             ];
         });
 
@@ -622,6 +644,17 @@ class SendController extends Controller
                 'customer_phone' => $item->order->customer->phone ?? null,
                 'customer_address' => $item->order->customer->address ?? null,
                 'customer_maps' => $item->order->customer->maps ?? null,
+                // `customer_id` dipakai halaman admin untuk menyimpan titik yang
+                // baru ditaruh. Koordinat dikirim sebagai ANGKA — klien tidak
+                // boleh mem-parse URL sendiri, karena parser yang sama lalu
+                // hidup di tiga tempat dan menyimpang pelan-pelan.
+                'customer_id' => $item->order->customer?->id,
+                'customer_latitude' => $item->order->customer?->latitude === null
+                    ? null
+                    : (float) $item->order->customer?->latitude,
+                'customer_longitude' => $item->order->customer?->longitude === null
+                    ? null
+                    : (float) $item->order->customer?->longitude,
                 'branch_name' => $item->order->project->name ?? null,
                 'created_at' => $item->created_at,
             ];
@@ -707,6 +740,17 @@ class SendController extends Controller
                 'customer_phone' => $item->order->customer->phone,
                 'customer_address' => $item->order->customer->address,
                 'customer_maps' => $item->order->customer->maps,
+                // `customer_id` dipakai halaman admin untuk menyimpan titik yang
+                // baru ditaruh. Koordinat dikirim sebagai ANGKA — klien tidak
+                // boleh mem-parse URL sendiri, karena parser yang sama lalu
+                // hidup di tiga tempat dan menyimpang pelan-pelan.
+                'customer_id' => $item->order->customer->id,
+                'customer_latitude' => $item->order->customer->latitude === null
+                    ? null
+                    : (float) $item->order->customer->latitude,
+                'customer_longitude' => $item->order->customer->longitude === null
+                    ? null
+                    : (float) $item->order->customer->longitude,
                 'photo' => $photoUrl,
             ];
         });

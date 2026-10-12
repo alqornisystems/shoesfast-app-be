@@ -230,4 +230,65 @@ class TitikPelangganTest extends TestCase
             'maps' => 'https://www.google.com/maps/@-7.1,112.1,17z',
         ])->assertStatus(404);
     }
+
+    /**
+     * `users_id` sengaja tidak dikirim: tabel `orders` di skema test tidak
+     * punya kolom itu (lihat CreatesCustomerSchema), dan jalur yang diuji di
+     * sini tidak membacanya.
+     */
+    private function buatPesanan(int $customerId, string $kode): void
+    {
+        \App\Models\Order::create([
+            'projects_id' => 1,
+            'customers_id' => $customerId,
+            'code' => $kode,
+            'date' => time(),
+            'status' => 0,
+            'is_deleted' => 0,
+        ]);
+    }
+
+    public function test_daftar_pesanan_siap_jemput_memuat_id_dan_koordinat_pelanggan(): void
+    {
+        $this->masukSebagaiAdmin();
+
+        $pelanggan = $this->buatPelanggan([
+            'maps' => 'https://www.google.com/maps/@-7.28848,112.6331921,17z',
+        ]);
+        $this->buatPesanan($pelanggan->id, 'UJI-001');
+
+        $this->getJson('/api/sends/available-pickup-orders')
+            ->assertOk()
+            ->assertJsonPath('0.customer_id', $pelanggan->id)
+            ->assertJsonPath('0.customer_latitude', -7.28848)
+            ->assertJsonPath('0.customer_longitude', 112.6331921);
+    }
+
+    public function test_pelanggan_tanpa_titik_mengirim_koordinat_null(): void
+    {
+        $this->masukSebagaiAdmin();
+
+        $pelanggan = $this->buatPelanggan();
+        $this->buatPesanan($pelanggan->id, 'UJI-002');
+
+        $this->getJson('/api/sends/available-pickup-orders')
+            ->assertOk()
+            ->assertJsonPath('0.customer_latitude', null)
+            ->assertJsonPath('0.customer_longitude', null);
+    }
+
+    public function test_daftar_tunggu_jemput_memuat_id_dan_koordinat_pelanggan(): void
+    {
+        $this->masukSebagaiAdmin();
+
+        $pelanggan = $this->buatPelanggan([
+            'maps' => 'https://www.google.com/maps/@-7.5,112.5,17z',
+        ]);
+        $this->buatPesanan($pelanggan->id, 'UJI-003');
+
+        $this->getJson('/api/sends/pickup-waiting-list')
+            ->assertOk()
+            ->assertJsonPath('data.0.customer_id', $pelanggan->id)
+            ->assertJsonPath('data.0.customer_latitude', -7.5);
+    }
 }
