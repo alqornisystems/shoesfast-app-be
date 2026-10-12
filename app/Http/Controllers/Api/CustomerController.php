@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\RewardRedemption;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -585,6 +586,50 @@ class CustomerController extends Controller
         $customer->project_ids = $customer->projects->pluck('id')->toArray();
 
         return response()->json(['data' => $customer]);
+    }
+
+    /**
+     * PUT /api/customers/{id}/point
+     *
+     * Menyimpan HANYA titik peta pelanggan, dipanggil dari halaman tempat tugas
+     * kurir dibuat ketika admin menaruh pin di peta.
+     *
+     * Endpoint terpisah, bukan `update()` yang sudah ada, karena endpoint itu
+     * menuntut `name` dan `phone`. Melonggarkan keduanya jadi `sometimes`
+     * berarti melonggarkan validasi untuk SEMUA pemanggil demi satu layar —
+     * sesudah itu PUT yang kelupaan mengirim nama akan diam-diam mempertahankan
+     * nama lama. Mengakalinya dengan GET-dulu-lalu-PUT-semuanya juga ditolak:
+     * itu baca-ubah-tulis di atas 19 kolom, dan sekali bentuk GET berbeda dari
+     * bentuk PUT, `project_ids` atau `member_code` ikut tertimpa tanpa galat.
+     *
+     * Koordinatnya tidak ditulis di sini — hook `saving` di model Customer yang
+     * menurunkannya dari URL, sama seperti jalur tulis lainnya.
+     */
+    public function updatePoint(Request $request, string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'maps' => ['nullable', 'string'],
+        ]);
+
+        // Cakupan data sama dengan update() dan destroy() di controller ini.
+        $customer = Customer::where('projects_id', 1)->findOrFail($id);
+
+        $customer->update([
+            'maps' => $validated['maps'] ?? null,
+            'modified_by' => auth()->id(),
+        ]);
+
+        $customer->refresh();
+
+        return response()->json([
+            'message' => 'Titik pelanggan tersimpan.',
+            'data' => [
+                'id' => $customer->id,
+                'maps' => $customer->maps,
+                'latitude' => $customer->latitude === null ? null : (float) $customer->latitude,
+                'longitude' => $customer->longitude === null ? null : (float) $customer->longitude,
+            ],
+        ]);
     }
 
     /**

@@ -342,6 +342,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('customers/{id}/tags', [CustomerController::class, 'syncTags']);
         });
 
+        // Sebelum apiResource, mengikuti aturan repo ini. Hanya menyimpan titik
+        // peta — dipanggil dari halaman pembuatan tugas kurir, bukan dari form
+        // pelanggan.
+        Route::put('customers/{id}/point', [CustomerController::class, 'updatePoint']);
+
         Route::apiResource('customers', CustomerController::class);
 
         Route::prefix('broadcasts')->group(function () {

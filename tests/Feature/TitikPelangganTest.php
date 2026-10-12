@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\Role;
+use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 use Tests\Feature\Customer\CreatesCustomerSchema;
 use Tests\TestCase;
 
@@ -135,5 +138,96 @@ class TitikPelangganTest extends TestCase
         $pelanggan->update(['name' => 'Nama Baru']);
 
         $this->assertSame(-7.1, (float) $pelanggan->fresh()->latitude);
+    }
+
+    private function masukSebagaiAdmin(): void
+    {
+        $user = new User(['name' => 'Admin Uji', 'projects_id' => 1]);
+        $user->id = 1;
+        $user->setRelation('role', new Role(['name' => 'Admin']));
+
+        Sanctum::actingAs($user);
+    }
+
+    public function test_endpoint_titik_menyimpan_maps_dan_membalas_koordinatnya(): void
+    {
+        $this->masukSebagaiAdmin();
+        $pelanggan = $this->buatPelanggan();
+
+        $this->putJson("/api/customers/{$pelanggan->id}/point", [
+            'maps' => 'https://www.google.com/maps/@-7.28848,112.6331921,17z',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.latitude', -7.28848)
+            ->assertJsonPath('data.longitude', 112.6331921);
+
+        $this->assertSame(-7.28848, (float) $pelanggan->fresh()->latitude);
+    }
+
+    public function test_endpoint_titik_tidak_menyentuh_kolom_lain(): void
+    {
+        $this->masukSebagaiAdmin();
+        $pelanggan = $this->buatPelanggan([
+            'name' => 'Nama Asli',
+            'phone' => '81200000000',
+            'address' => 'Alamat Asli',
+        ]);
+
+        $this->putJson("/api/customers/{$pelanggan->id}/point", [
+            'maps' => 'https://www.google.com/maps/@-7.1,112.1,17z',
+        ])->assertOk();
+
+        $segar = $pelanggan->fresh();
+        $this->assertSame('Nama Asli', $segar->name);
+        $this->assertSame('81200000000', $segar->phone);
+        $this->assertSame('Alamat Asli', $segar->address);
+    }
+
+    /** Review Focus 3: admin yang sadar titiknya salah butuh jalan membatalkannya. */
+    public function test_endpoint_titik_menerima_null_untuk_menghapus_titik(): void
+    {
+        $this->masukSebagaiAdmin();
+        $pelanggan = $this->buatPelanggan([
+            'maps' => 'https://www.google.com/maps/@-7.1,112.1,17z',
+        ]);
+
+        $this->putJson("/api/customers/{$pelanggan->id}/point", ['maps' => null])
+            ->assertOk()
+            ->assertJsonPath('data.latitude', null);
+
+        $this->assertNull($pelanggan->fresh()->maps);
+    }
+
+    public function test_endpoint_titik_menolak_maps_bukan_string(): void
+    {
+        $this->masukSebagaiAdmin();
+        $pelanggan = $this->buatPelanggan();
+
+        $this->putJson("/api/customers/{$pelanggan->id}/point", ['maps' => ['a' => 1]])
+            ->assertStatus(422);
+    }
+
+    /**
+     * Review Focus 4: pelanggan yang sudah dihapus lunak tidak bisa disunting.
+     *
+     * Pelanggan yang hidup diuji lebih dulu DI DALAM test yang sama, dengan
+     * sengaja: rute yang belum ada juga menjawab 404, jadi tanpa langkah
+     * pertama ini test ini akan hijau bahkan sebelum endpointnya dibuat — dan
+     * test yang tidak pernah bisa dilihat gagal tidak membuktikan apa pun.
+     */
+    public function test_endpoint_titik_404_untuk_pelanggan_terhapus(): void
+    {
+        $this->masukSebagaiAdmin();
+        $pelanggan = $this->buatPelanggan();
+
+        $this->putJson("/api/customers/{$pelanggan->id}/point", [
+            'maps' => 'https://www.google.com/maps/@-7.1,112.1,17z',
+        ])->assertOk();
+
+        $pelanggan->update(['is_deleted' => 1]);
+
+        $this->putJson("/api/customers/{$pelanggan->id}/point", [
+            'maps' => 'https://www.google.com/maps/@-7.1,112.1,17z',
+        ])->assertStatus(404);
     }
 }
