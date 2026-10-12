@@ -50,6 +50,15 @@ Satu arah, supaya tidak pernah ada dua sumber kebenaran yang berselisih:
 - `maps` kosong tapi klien mengirim `latitude`/`longitude` langsung → angka itu
   dipakai apa adanya. Ini menjaga jalur portal pelanggan.
 
+Ketiga aturan di atas bertabrakan kalau `maps` dikosongkan **sementara**
+koordinat dikirim eksplisit dalam satu simpanan yang sama. Urutan menangnya,
+ditetapkan di sini supaya tidak ditebak di kode:
+
+1. URL yang bisa diparse selalu menang.
+2. Kalau URL kosong atau tidak memuat titik, angka yang dikirim eksplisit pada
+   simpanan itu dihormati.
+3. Kalau tidak ada keduanya, koordinat dikosongkan.
+
 Aturannya tinggal di **model `Customer`**, lewat hook `saving`, bukan di tiap
 controller. Ada lima jalur tulis ke kolom itu hari ini — admin store, admin
 update, endpoint titik yang baru, portal profil, portal register — dan jalur
